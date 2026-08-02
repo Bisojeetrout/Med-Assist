@@ -1451,6 +1451,7 @@ fun RecordsScreen(
 fun ProfileScreen(user: UserEntity? = null, onUpdateUser: (UserEntity) -> Unit = {}, onEditProfile: () -> Unit = {}, onSignOut: () -> Unit = {}) {
     val name = user?.name?.takeIf { it.isNotBlank() } ?: "John Doe"
     val age = user?.age?.takeIf { it.isNotBlank() } ?: "N/A"
+    val email = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email ?: "johndoe@example.com"
     
     Column(
         modifier = Modifier
@@ -1467,7 +1468,7 @@ fun ProfileScreen(user: UserEntity? = null, onUpdateUser: (UserEntity) -> Unit =
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(name, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text("johndoe@example.com", fontSize = 16.sp, color = Color.Gray)
+        Text(email, fontSize = 16.sp, color = Color.Gray)
         
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onEditProfile, modifier = Modifier.fillMaxWidth(0.6f)) {
