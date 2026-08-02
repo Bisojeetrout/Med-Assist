@@ -140,4 +140,59 @@ object GeminiHelper {
             }
         }
     }
+
+    suspend fun analyzeMedicine(bitmap: Bitmap): MedicineAnalysis? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val prompt = """
+                    You are an expert pharmacist AI. Analyze this image of a medicine/drug packaging or pill bottle.
+                    Provide detailed information about the medicine. You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
+                    {
+                        "brand": "Brand Name",
+                        "genericName": "Generic Name",
+                        "use": "What it is used for",
+                        "dosage": "Typical dosage found on the package",
+                        "manufacturer": "Manufacturer name",
+                        "sideEffects": "Common side effects",
+                        "interactions": "Potential drug interactions",
+                        "isGenuine": "Does this look like a genuine manufacturer product based on standard packaging? (Yes/No/Unsure)"
+                    }
+                """.trimIndent()
+
+                val inputContent = content {
+                    image(bitmap)
+                    text(prompt)
+                }
+
+                val response = generativeModel.generateContent(inputContent)
+                val responseText = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                val json = JSONObject(responseText)
+                
+                MedicineAnalysis(
+                    brand = json.optString("brand", "Unknown"),
+                    genericName = json.optString("genericName", "Unknown"),
+                    use = json.optString("use", "Unknown"),
+                    dosage = json.optString("dosage", "Unknown"),
+                    manufacturer = json.optString("manufacturer", "Unknown"),
+                    sideEffects = json.optString("sideEffects", "Unknown"),
+                    interactions = json.optString("interactions", "Unknown"),
+                    isGenuine = json.optString("isGenuine", "Unknown")
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
 }
+
+data class MedicineAnalysis(
+    val brand: String,
+    val genericName: String,
+    val use: String,
+    val dosage: String,
+    val manufacturer: String,
+    val sideEffects: String,
+    val interactions: String,
+    val isGenuine: String
+)

@@ -814,6 +814,31 @@ fun RecordsScreen(
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+    
+    val coroutineScope = rememberCoroutineScope()
+    var pharmaLensAnalysis by remember { mutableStateOf<com.example.swasthya.MedicineAnalysis?>(null) }
+    var isPharmaLensLoading by remember { mutableStateOf(false) }
+    var showPharmaLensDialog by remember { mutableStateOf(false) }
+    val pharmaLensPhotoFile = remember { java.io.File(context.filesDir, "Pharma_${System.currentTimeMillis()}.jpg") }
+    val pharmaLensPhotoUri = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pharmaLensPhotoFile) }
+    
+    val pharmaLensCameraLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            isPharmaLensLoading = true
+            coroutineScope.launch {
+                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(context.contentResolver, pharmaLensPhotoUri))
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, pharmaLensPhotoUri)
+                }
+                val analysis = com.example.swasthya.GeminiHelper.analyzeMedicine(bitmap)
+                pharmaLensAnalysis = analysis
+                isPharmaLensLoading = false
+                if (analysis != null) showPharmaLensDialog = true
+            }
+        }
+    }
 
     var expandedSection by remember { mutableStateOf<String?>(if (startWithFoodLog) "Food" else "Medicines") }
     var showAddFoodDialog by remember { mutableStateOf(startWithFoodLog) }
@@ -877,14 +902,20 @@ fun RecordsScreen(
                         
                         // Pharma Lens Scanner
                         Button(
-                            onClick = { /* Pharma Lens Scanner API */ },
+                            onClick = { pharmaLensCameraLauncher.launch(pharmaLensPhotoUri) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Search, contentDescription = "Scan")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Pharma Lens Medicine Scanner")
+                            if (isPharmaLensLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Analyzing...")
+                            } else {
+                                Icon(Icons.Default.Search, contentDescription = "Scan")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Pharma Lens Medicine Scanner")
+                            }
                         }
                         
                         Spacer(modifier = Modifier.height(16.dp))
@@ -1393,6 +1424,27 @@ fun RecordsScreen(
             }
         )
     }
+    
+    if (showPharmaLensDialog && pharmaLensAnalysis != null) {
+        PharmaLensResultDialog(
+            analysis = pharmaLensAnalysis!!,
+            onDismiss = { showPharmaLensDialog = false },
+            onConfirmConsume = { timesPerDay ->
+                showPharmaLensDialog = false
+                val cal = java.util.Calendar.getInstance()
+                onAddMedicine(MedicineEntity(
+                    name = pharmaLensAnalysis!!.brand,
+                    dosage = pharmaLensAnalysis!!.dosage,
+                    schedule = "$timesPerDay times a day",
+                    explanation = pharmaLensAnalysis!!.use,
+                    timeInMillis = cal.timeInMillis,
+                    timeLabel = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(cal.time),
+                    reminderType = "Medicine",
+                    hasImage = false
+                ))
+            }
+        )
+    }
 }
 
 @Composable
@@ -1737,4 +1789,71 @@ fun InsightCard(title: String, content: String, bgColor: Color, iconColor: Color
             Text(content, fontSize = 14.sp, color = Color.DarkGray)
         }
     }
+}
+
+@Composable
+fun PharmaLensResultDialog(
+    analysis: com.example.swasthya.MedicineAnalysis,
+    onDismiss: () -> Unit,
+    onConfirmConsume: (String) -> Unit
+) {
+    var accepted by remember { mutableStateOf(false) }
+    var timesPerDay by remember { mutableStateOf("1") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("💊 Pharma Lens Analysis") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text("Brand: ${analysis.brand}", fontWeight = FontWeight.Bold)
+                Text("Generic: ${analysis.genericName}")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Use: ${analysis.use}")
+                Text("Dosage: ${analysis.dosage}")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Manufacturer: ${analysis.manufacturer}")
+                Text("Genuine Check: ${analysis.isGenuine}", color = if (analysis.isGenuine.contains("Yes", ignoreCase = true)) Color(0xFF2E7D32) else Color.Red)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Side Effects: ${analysis.sideEffects}")
+                Text("Interactions: ${analysis.interactions}", color = Color(0xFFC62828))
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                if (!accepted) {
+                    Text("Are you going to consume this drug?", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) {
+                            Text("No")
+                        }
+                        Button(onClick = { accepted = true }) {
+                            Text("Yes")
+                        }
+                    }
+                } else {
+                    Text("How many times a day?", fontWeight = FontWeight.Bold)
+                    androidx.compose.material3.OutlinedTextField(
+                        value = timesPerDay,
+                        onValueChange = { timesPerDay = it },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (accepted) {
+                Button(onClick = { onConfirmConsume(timesPerDay) }) {
+                    Text("Save to Schedule")
+                }
+            }
+        },
+        dismissButton = {
+            if (accepted) {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
+    )
 }
