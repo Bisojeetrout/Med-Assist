@@ -548,42 +548,7 @@ fun HomeScreen(
         
         Spacer(modifier = Modifier.height(24.dp))
         
-        // Disease Risk Prediction
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Disease Risk Prediction", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Cardiovascular Risk:")
-                    Text("Low", color = Color(0xFF388E3C), fontWeight = FontWeight.Bold) // Green
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Diabetes Risk:")
-                    Text("Moderate", color = Color(0xFFF57C00), fontWeight = FontWeight.Bold) // Orange
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
         
-        // AI Recommendations
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = "AI", tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("AI Insights", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("• Drink 2 more glasses of water today.\n• Based on your recent vitals, a 15-minute walk is recommended.\n• Your blood pressure is trending in a healthy range.")
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
         
         // One-Tap Share
         Button(
