@@ -28,3 +28,7 @@ local.properties
 # Environment/secrets
 .env
 .env.*
+
+# IDE and Kotlin build artifacts
+.idea/
+.kotlin/
