@@ -524,23 +524,7 @@ fun HomeScreen(
                 }
             }
         }
-        
         Spacer(modifier = Modifier.height(24.dp))
-        
-        // Advanced Health Score
-        Text("Overall Health Score", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(16.dp))
-        Box(
-            modifier = Modifier
-                .size(150.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("85", fontSize = 56.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
         
         // Quick AI Summary Button
         Button(

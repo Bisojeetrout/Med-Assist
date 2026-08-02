@@ -86,7 +86,12 @@ class HealthAiRepository {
                     
                     Provide a comprehensive health analysis based on the safety rules provided in your system instructions.
                     
-                    You MUST return ONLY a valid JSON object in the following format, with no markdown formatting or backticks:
+                    You MUST return ONLY a valid JSON object in the following format, with no markdown formatting or backticks around the JSON string.
+                    IMPORTANT FORMATTING RULES for the JSON values:
+                    - Do NOT use markdown (no **, no *, no `). The UI cannot render markdown.
+                    - Use standard plain text. If you need a list, use dashes (-) or emojis.
+                    - Keep sentences short, friendly, and highly readable.
+                    
                     {
                         "summary": "Overall health summary...",
                         "importantFindings": "Any critical patterns...",
