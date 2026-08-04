@@ -92,6 +92,7 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("androidx.health.connect:connect-client:1.1.0-alpha08")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

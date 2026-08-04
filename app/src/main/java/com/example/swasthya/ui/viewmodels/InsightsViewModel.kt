@@ -81,6 +81,24 @@ class InsightsViewModel : ViewModel() {
         }
     }
 
+    fun ensureContextLoaded(
+        user: UserEntity?,
+        vitals: List<VitalsEntity>,
+        medicines: List<MedicineEntity>,
+        reports: List<ReportEntity>,
+        foods: List<FoodEntity>,
+        steps: String,
+        hr: String,
+        calories: String
+    ) {
+        val context = HealthContextBuilder.buildContext(
+            user, vitals, medicines, reports, foods, steps, hr, calories
+        )
+        if (context != null) {
+            currentContextStr = context.toPromptString()
+        }
+    }
+
     suspend fun sendChatMessage(history: List<Pair<String, String>>, newMessage: String): String {
         return repository.sendChatMessage(history, newMessage, currentContextStr)
     }

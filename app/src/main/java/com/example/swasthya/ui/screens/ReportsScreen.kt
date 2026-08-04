@@ -302,7 +302,8 @@ if (selectedReportForPopup != null) {
                                     localUri = file.absolutePath,
                                     cloudUrl = cloudUrl,
                                     reportSummary = aiSummary,
-                                    uploadDate = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US).format(java.util.Date())
+                                    uploadDate = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US).format(java.util.Date()),
+                                    timestamp = System.currentTimeMillis()
                                 )
                             )
                             isUploading = false

@@ -213,6 +213,11 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                         FirestoreSync.syncFood(user?.phone ?: "anonymous", food)
                     }
                 },
+                onDeleteFood = { food: FoodEntity ->
+                    coroutineScope.launch {
+                        dao.deleteFood(food)
+                    }
+                },
                 onNavigateToReports = {
                     navController.navigate("reports")
                 },

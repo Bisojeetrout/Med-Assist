@@ -165,6 +165,7 @@ fun DashboardScreen(
     onAddReport: (ReportEntity) -> Unit = {},
     foods: List<FoodEntity> = emptyList(),
     onAddFood: (FoodEntity) -> Unit = {},
+    onDeleteFood: (FoodEntity) -> Unit = {},
     onNavigateToReports: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onNavigateToInsights: (String, String, String) -> Unit = { _, _, _ -> },
@@ -184,6 +185,55 @@ fun DashboardScreen(
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    val smsSentReceiver = remember {
+        object : android.content.BroadcastReceiver() {
+            private var lastToastTime = 0L
+            override fun onReceive(ctx: android.content.Context?, intent: android.content.Intent?) {
+                val now = System.currentTimeMillis()
+                if (now - lastToastTime < 2000) return
+                lastToastTime = now
+                
+                when (resultCode) {
+                    android.app.Activity.RESULT_OK -> {
+                        android.widget.Toast.makeText(context, "SMS sent successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    android.telephony.SmsManager.RESULT_ERROR_GENERIC_FAILURE -> {
+                        android.widget.Toast.makeText(context, "Generic SMS failure. Check network/SIM settings.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    android.telephony.SmsManager.RESULT_ERROR_NO_SERVICE -> {
+                        android.widget.Toast.makeText(context, "No cell service available.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    android.telephony.SmsManager.RESULT_ERROR_NULL_PDU -> {
+                        android.widget.Toast.makeText(context, "Failed: Null PDU.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF -> {
+                        android.widget.Toast.makeText(context, "Radio off (Airplane mode).", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    else -> {
+                        android.widget.Toast.makeText(context, "SMS failed to send (Error code: $resultCode).", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(context) {
+        val filter = android.content.IntentFilter("com.example.swasthya.SMS_SENT")
+        androidx.core.content.ContextCompat.registerReceiver(
+            context,
+            smsSentReceiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_EXPORTED
+        )
+        onDispose {
+            try {
+                context.unregisterReceiver(smsSentReceiver)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
 
     val permissions = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
@@ -255,23 +305,48 @@ fun DashboardScreen(
         }
     }
 
-    val requestNotificationPermission = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    val requestPermissionsLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         onSyncRequested()
     }
 
     LaunchedEffect(Unit) {
+        val permissionsToRequest = mutableListOf<String>()
+        
+        val hasSmsPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.SEND_SMS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasSmsPermission) {
+            permissionsToRequest.add(android.Manifest.permission.SEND_SMS)
+        }
+
+        val hasFineLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCoarseLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasFineLocation || !hasCoarseLocation) {
+            permissionsToRequest.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            permissionsToRequest.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             val hasNotificationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
                 context,
                 android.Manifest.permission.POST_NOTIFICATIONS
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
             if (!hasNotificationPermission) {
-                requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                onSyncRequested()
+                permissionsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            requestPermissionsLauncher.launch(permissionsToRequest.toTypedArray())
         } else {
             onSyncRequested()
         }
@@ -396,6 +471,17 @@ fun DashboardScreen(
             foodScanPhotoUri = foodScanPhotoFile.absolutePath
         }
     }
+    val foodScanGalleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+        if (uri != null) {
+            val file = File(context.cacheDir, "Gallery_Food_${System.currentTimeMillis()}.jpg")
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val outputStream = java.io.FileOutputStream(file)
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            foodScanPhotoUri = file.absolutePath
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -470,14 +556,13 @@ fun DashboardScreen(
                             shape = RoundedCornerShape(8.dp),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Text("Food Upload", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text("Calorie Estimation", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         }
                         FloatingActionButton(
                             onClick = {
                                 isFabMenuExpanded = false
                                 foodScanPhotoUri = null
                                 foodScanDesc = ""
-                                foodScanCameraLauncher.launch(foodScanPhotoUriToPass)
                                 showFoodScanDialog = true
                             },
                             modifier = Modifier.size(48.dp),
@@ -571,8 +656,8 @@ fun DashboardScreen(
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (selectedTab) {
-                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood)
-                1 -> VitalsScreen(vitals, onAddVitals, onSyncRequested = {})
+                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood, onDeleteFood = onDeleteFood, onNavigateToVitals = { selectedTab = 1 })
+                1 -> VitalsScreen(user, onUpdateUser, vitals, onAddVitals, foods, onAddFood, onDeleteFood = onDeleteFood, onSyncRequested = {})
                 2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, onNavigateToReports)
                 3 -> ProfileScreen(
                     user = user,
@@ -660,18 +745,36 @@ fun DashboardScreen(
             if (showFoodScanDialog) {
                 AlertDialog(
                     onDismissRequest = { showFoodScanDialog = false },
-                    title = { Text("Log Food Scan") },
+                    title = { Text("Calorie Estimation") },
                     text = {
                         Column {
-                            Text("Take a photo of your food/meal to scan with AI.")
+                            Text("Take a photo or choose from gallery to estimate calories.")
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { foodScanCameraLauncher.launch(foodScanPhotoUriToPass) }, 
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Search, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(if (foodScanPhotoUri == null) "Take Photo (Required)" else "Photo Captured!")
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { foodScanCameraLauncher.launch(foodScanPhotoUriToPass) }, 
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(painter = painterResource(id = android.R.drawable.ic_menu_camera), contentDescription = null)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Camera")
+                                }
+                                Button(
+                                    onClick = { foodScanGalleryLauncher.launch("image/*") }, 
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(painter = painterResource(id = android.R.drawable.ic_menu_gallery), contentDescription = null)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Gallery")
+                                }
+                            }
+                            if (foodScanPhotoUri != null) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Text("Image selected!", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                                    TextButton(onClick = { foodScanPhotoUri = null }) {
+                                        Text("Clear Image", color = Color.Red)
+                                    }
+                                }
                             }
                             Spacer(modifier = Modifier.height(16.dp))
                             OutlinedTextField(
@@ -691,18 +794,32 @@ fun DashboardScreen(
                                     var cloudUrl: String? = null
                                     var aiAnalysis: String? = null
                                     var calories: Int? = null
+                                    var analysis: com.example.swasthya.FoodAnalysis? = null
                                     if (foodScanPhotoUri != null) {
                                         cloudUrl = uploadFileToCloudinary(foodScanPhotoUri!!)
                                         try {
                                             val bitmap = android.graphics.BitmapFactory.decodeFile(foodScanPhotoUri!!)
-                                            val analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodScanDesc)
-                                            aiAnalysis = analysis.summary
+                                            analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodScanDesc)
+                                            aiAnalysis = "${analysis.calories} kcal, ${analysis.protein}g protein"
                                             calories = analysis.calories
                                         } catch (e: Exception) {
                                             e.printStackTrace()
                                         }
                                     }
-                                    val newFood = FoodEntity(description = foodScanDesc, photoUri = foodScanPhotoUri, cloudUrl = cloudUrl, aiAnalysis = aiAnalysis, calories = calories)
+                                    val newFood = FoodEntity(
+                                        description = foodScanDesc,
+                                        photoUri = foodScanPhotoUri,
+                                        cloudUrl = cloudUrl,
+                                        aiAnalysis = aiAnalysis,
+                                        calories = calories,
+                                        carbs = analysis?.carbohydrates,
+                                        protein = analysis?.protein,
+                                        fat = analysis?.fats,
+                                        dishName = analysis?.dishName,
+                                        weightGrams = analysis?.weightGrams,
+                                        micronutrients = analysis?.vitaminsAndMinerals,
+                                        deficiencyWarnings = analysis?.deficiencyWarnings
+                                    )
                                     onAddFood(newFood)
                                     isUploadingFoodScan = false
                                     showFoodScanDialog = false
@@ -862,7 +979,9 @@ fun HomeScreen(
     medicines: List<MedicineEntity> = emptyList(),
     onNavigateToInsights: (String, String, String) -> Unit = { _, _, _ -> },
     onShareWithPhysician: () -> Unit = {},
-    onAddFood: (FoodEntity) -> Unit = {}
+    onAddFood: (FoodEntity) -> Unit = {},
+    onDeleteFood: (FoodEntity) -> Unit = {},
+    onNavigateToVitals: () -> Unit = {}
 ) {
     var currentView by remember { mutableStateOf("Home") }
 
@@ -891,20 +1010,13 @@ fun HomeScreen(
         }
     }
 
-    if (currentView == "FoodLog") {
-        FoodLogScreen(
-            foods = foods,
-            onAddFood = onAddFood,
-            onNavigateBack = { currentView = "Home" }
-        )
-    } else {
-        val todayStart = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        val caloriesConsumed = foods.filter { it.timestamp >= todayStart }.sumOf { it.calories ?: 0 }
+    val todayStart = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val caloriesConsumed = foods.filter { it.timestamp >= todayStart }.sumOf { it.calories ?: 0 }
 
         var showQuickSummaryDialog by remember { mutableStateOf(false) }
         var quickSummaryText by remember { mutableStateOf<String?>(null) }
@@ -922,12 +1034,157 @@ fun HomeScreen(
         val triggerText = {
             val isEmergencyServices = user?.sosContactPreference == "112" || user?.sosContactPreference == "911"
             val contact = if (isEmergencyServices) "112" else user?.emergencyContactPhone?.takeIf { it.isNotBlank() } ?: "112"
+            
+            val cleanContact = contact.filter { it.isDigit() || it == '+' }
             val defaultMsg = "EMERGENCY! I need help. Blood Type: ${user?.bloodGroup ?: "Unknown"}, Conditions: ${user?.disease ?: "None"}. Please contact me."
-            val msg = if (user?.customSosMessage.isNullOrBlank()) defaultMsg else user!!.customSosMessage
-            val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:$contact")).apply {
-                putExtra("sms_body", msg)
+            val baseMessage = if (user?.customSosMessage.isNullOrBlank()) defaultMsg else user!!.customSosMessage
+
+            val sendSmsWithMessage: (String) -> Unit = { messageBody ->
+                val hasSmsPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.SEND_SMS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                if (hasSmsPermission) {
+                    try {
+                        val subscriptionId = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP_MR1) {
+                            android.telephony.SubscriptionManager.getDefaultSmsSubscriptionId()
+                        } else {
+                            android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID
+                        }
+
+                        val smsManager = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                            val systemSmsManager = context.getSystemService(android.telephony.SmsManager::class.java)
+                            if (subscriptionId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                                systemSmsManager?.createForSubscriptionId(subscriptionId) ?: systemSmsManager
+                            } else {
+                                systemSmsManager
+                            } ?: @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
+                        } else {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP_MR1 &&
+                                subscriptionId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                                @Suppress("DEPRECATION")
+                                android.telephony.SmsManager.getSmsManagerForSubscriptionId(subscriptionId)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                android.telephony.SmsManager.getDefault()
+                            }
+                        }
+
+                        val SENT_ACTION = "com.example.swasthya.SMS_SENT"
+                        val sentIntent = android.app.PendingIntent.getBroadcast(
+                            context,
+                            0,
+                            android.content.Intent(SENT_ACTION),
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                        )
+
+                        val parts = smsManager.divideMessage(messageBody)
+                        val sentIntents = ArrayList<android.app.PendingIntent>()
+                        for (i in 0 until parts.size) {
+                            sentIntents.add(sentIntent)
+                        }
+
+                        smsManager.sendMultipartTextMessage(cleanContact, null, parts, sentIntents, null)
+                        android.widget.Toast.makeText(context, "Sending SOS Message...", android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(context, "Auto SMS failed. Opening SMS app.", android.widget.Toast.LENGTH_LONG).show()
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                            data = android.net.Uri.parse("smsto:${android.net.Uri.encode(cleanContact)}")
+                            putExtra("sms_body", messageBody)
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    }
+                } else {
+                    android.widget.Toast.makeText(context, "SMS Permission not granted. Opening SMS app.", android.widget.Toast.LENGTH_SHORT).show()
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                        data = android.net.Uri.parse("smsto:${android.net.Uri.encode(cleanContact)}")
+                        putExtra("sms_body", messageBody)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                }
             }
-            context.startActivity(intent)
+
+            val hasFineLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val hasCoarseLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (hasFineLocation || hasCoarseLocation) {
+                android.widget.Toast.makeText(context, "Fetching location for SOS...", android.widget.Toast.LENGTH_SHORT).show()
+                try {
+                    val fusedLocationClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+                    val cancellationTokenSource = com.google.android.gms.tasks.CancellationTokenSource()
+                    
+                    var locationSent = false
+                    val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                    
+                    val fallbackRunnable = Runnable {
+                        if (!locationSent) {
+                            locationSent = true
+                            sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+                        }
+                    }
+                    
+                    // Set a strict 4-second timeout to fetch GPS location
+                    handler.postDelayed(fallbackRunnable, 4000)
+
+                    fusedLocationClient.getCurrentLocation(
+                        com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
+                        cancellationTokenSource.token
+                    ).addOnSuccessListener { location: android.location.Location? ->
+                        if (!locationSent) {
+                            locationSent = true
+                            handler.removeCallbacks(fallbackRunnable)
+                            if (location != null) {
+                                val mapsLink = "https://maps.google.com/?q=${location.latitude},${location.longitude}"
+                                sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: $mapsLink")
+                            } else {
+                                // Try last known location
+                                fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: android.location.Location? ->
+                                    if (lastLoc != null) {
+                                        val mapsLink = "https://maps.google.com/?q=${lastLoc.latitude},${lastLoc.longitude}"
+                                        sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: $mapsLink")
+                                    } else {
+                                        sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+                                    }
+                                }.addOnFailureListener {
+                                    sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+                                }
+                            }
+                        }
+                    }.addOnFailureListener {
+                        if (!locationSent) {
+                            locationSent = true
+                            handler.removeCallbacks(fallbackRunnable)
+                            // Try last known location
+                            fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: android.location.Location? ->
+                                if (lastLoc != null) {
+                                    val mapsLink = "https://maps.google.com/?q=${lastLoc.latitude},${lastLoc.longitude}"
+                                    sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: $mapsLink")
+                                } else {
+                                    sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+                                }
+                            }.addOnFailureListener {
+                                sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+                            }
+                        }
+                    }
+                } catch (e: SecurityException) {
+                    sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location permission denied")
+                } catch (e: Exception) {
+                    sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+                }
+            } else {
+                android.widget.Toast.makeText(context, "Location permission not granted.", android.widget.Toast.LENGTH_SHORT).show()
+                sendSmsWithMessage("$baseMessage\n\n🚨 EMERGENCY SOS! I need immediate help. My current location: Location unavailable")
+            }
         }
 
         if (showInteractionDetailDialog && drugInteractionResult != null) {
@@ -1141,7 +1398,7 @@ fun HomeScreen(
             
             // Food Consumed Card
             Card(
-                modifier = Modifier.fillMaxWidth().clickable { currentView = "FoodLog" },
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToVitals() },
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9))
             ) {
                 Row(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
@@ -1245,7 +1502,6 @@ fun HomeScreen(
             )
         }
     }
-}
 
 @Composable
 fun FoodLogScreen(
@@ -1386,18 +1642,32 @@ fun FoodLogScreen(
                             var cloudUrl: String? = null
                             var aiAnalysis: String? = null
                             var calories: Int? = null
+                            var analysis: com.example.swasthya.FoodAnalysis? = null
                             if (foodPhotoUri != null) {
                                 cloudUrl = uploadFileToCloudinary(foodPhotoUri!!)
                                 try {
                                     val bitmap = android.graphics.BitmapFactory.decodeFile(foodPhotoUri!!)
-                                    val analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
-                                    aiAnalysis = analysis.summary
+                                    analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
+                                    aiAnalysis = "${analysis.calories} kcal, ${analysis.protein}g protein"
                                     calories = analysis.calories
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                 }
                             }
-                            onAddFood(FoodEntity(description = foodDesc, photoUri = foodPhotoUri, cloudUrl = cloudUrl, aiAnalysis = aiAnalysis, calories = calories))
+                            onAddFood(FoodEntity(
+                                description = foodDesc,
+                                photoUri = foodPhotoUri,
+                                cloudUrl = cloudUrl,
+                                aiAnalysis = aiAnalysis,
+                                calories = calories,
+                                carbs = analysis?.carbohydrates,
+                                protein = analysis?.protein,
+                                fat = analysis?.fats,
+                                dishName = analysis?.dishName,
+                                weightGrams = analysis?.weightGrams,
+                                micronutrients = analysis?.vitaminsAndMinerals,
+                                deficiencyWarnings = analysis?.deficiencyWarnings
+                            ))
                             isUploadingFood = false
                             showAddFoodDialog = false
                         }
@@ -1423,8 +1693,13 @@ fun FoodLogScreen(
 
 @Composable
 fun VitalsScreen(
+    user: UserEntity?,
+    onUpdateUser: (UserEntity) -> Unit,
     vitals: List<VitalsEntity>,
     onAddVitals: (VitalsEntity) -> Unit,
+    foods: List<FoodEntity>,
+    onAddFood: (FoodEntity) -> Unit,
+    onDeleteFood: (FoodEntity) -> Unit = {},
     onSyncRequested: () -> Unit
 ) {
     var selectedMood by remember { mutableStateOf("") }
@@ -1586,6 +1861,10 @@ fun VitalsScreen(
             }
         }
         Spacer(modifier = Modifier.height(24.dp))
+        
+        CalorieTrackerSection(user, onUpdateUser, foods, onAddFood, onDeleteFood)
+        
+        Spacer(modifier = Modifier.height(24.dp))
     }
 
     if (showAIPopup) {
@@ -1601,6 +1880,347 @@ fun VitalsScreen(
         )
     }
 }
+@Composable
+fun CalorieTrackerSection(
+    user: UserEntity?,
+    onUpdateUser: (UserEntity) -> Unit,
+    foods: List<FoodEntity>,
+    onAddFood: (FoodEntity) -> Unit,
+    onDeleteFood: (FoodEntity) -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    
+    // UI states
+    var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showEditLimitDialog by remember { mutableStateOf(false) }
+    var newLimitStr by remember { mutableStateOf("") }
+    
+    // Dialog flows
+    var showAddFoodDialog by remember { mutableStateOf(false) }
+    var showAnalysisResultDialog by remember { mutableStateOf(false) }
+    
+    // Add Food states
+    var foodDesc by remember { mutableStateOf("") }
+    var foodPhotoUri by remember { mutableStateOf<String?>(null) }
+    var isUploadingFood by remember { mutableStateOf(false) }
+    
+    // Analysis Result states
+    var currentAnalysisResult by remember { mutableStateOf<com.example.swasthya.FoodAnalysis?>(null) }
+    var currentCloudUrl by remember { mutableStateOf<String?>(null) }
+
+    val foodPhotoFile = remember { java.io.File(context.filesDir, "Food_${System.currentTimeMillis()}.jpg") }
+    val foodPhotoUriToPass = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", foodPhotoFile) }
+    val foodCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) { foodPhotoUri = foodPhotoFile.absolutePath }
+    }
+    val localFoodGalleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+        if (uri != null) {
+            val file = java.io.File(context.cacheDir, "Gallery_Food_${System.currentTimeMillis()}.jpg")
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val outputStream = java.io.FileOutputStream(file)
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            foodPhotoUri = file.absolutePath
+        }
+    }
+
+    // Filter foods for selected date
+    val startOfDay = java.util.Calendar.getInstance().apply {
+        timeInMillis = selectedDateMillis
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val endOfDay = startOfDay + 24 * 60 * 60 * 1000 - 1
+
+    val foodsForDate = foods.filter { it.timestamp in startOfDay..endOfDay }
+    val consumedFoods = foodsForDate.filter { it.isConsumed }
+    val totalCaloriesConsumed = consumedFoods.sumOf { it.calories ?: 0 }
+    val dailyLimit = user?.dailyCalorieLimit ?: 2000
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Calorie Tracker", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                // Simple Date Picker navigation (prev/next day)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selectedDateMillis -= 24 * 60 * 60 * 1000 }) { Icon(Icons.Default.ArrowBack, "Prev Day") }
+                    Text(java.text.SimpleDateFormat("MMM dd", java.util.Locale.US).format(java.util.Date(selectedDateMillis)), fontWeight = FontWeight.Medium)
+                    IconButton(onClick = { selectedDateMillis += 24 * 60 * 60 * 1000 }) { Icon(Icons.Default.ArrowForward, "Next Day") }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                Column {
+                    Text("$totalCaloriesConsumed", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color(0xFF2E7D32))
+                    Text("Consumed today", fontSize = 14.sp, color = Color.Gray)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("/ $dailyLimit kcal", fontSize = 16.sp, color = Color.Gray)
+                        IconButton(onClick = { 
+                            newLimitStr = dailyLimit.toString()
+                            showEditLimitDialog = true 
+                        }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Limit", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { (totalCaloriesConsumed.toFloat() / dailyLimit.toFloat()).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = if (totalCaloriesConsumed > dailyLimit) Color.Red else Color(0xFF4CAF50),
+                trackColor = Color(0xFFC8E6C9)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = { 
+                    foodDesc = ""
+                    foodPhotoUri = null
+                    showAddFoodDialog = true 
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Analyze Food")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Analyze New Food")
+            }
+        }
+    }
+
+    Text("Foods Consumed", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+    if (consumedFoods.isEmpty()) {
+        Text("No foods consumed on this date.", color = Color.Gray, modifier = Modifier.padding(bottom = 16.dp))
+    } else {
+        consumedFoods.forEach { food ->
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (food.photoUri != null) {
+                        coil.compose.AsyncImage(
+                            model = food.photoUri,
+                            contentDescription = "Food",
+                            modifier = Modifier.size(50.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(food.dishName ?: food.description.ifBlank { "Unknown Food" }, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("${food.calories ?: 0} kcal | ${food.protein ?: 0}g Protein", fontSize = 14.sp, color = Color.DarkGray)
+                        if (!food.deficiencyWarnings.isNullOrBlank() && food.deficiencyWarnings != "None detected") {
+                            Text("Warning: ${food.deficiencyWarnings}", fontSize = 12.sp, color = Color(0xFFD32F2F))
+                        }
+                    }
+                    IconButton(onClick = { onDeleteFood(food) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Food", tint = Color.Red)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showEditLimitDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditLimitDialog = false },
+            title = { Text("Edit Daily Limit") },
+            text = {
+                OutlinedTextField(
+                    value = newLimitStr,
+                    onValueChange = { if (it.length <= 4) newLimitStr = it.filter { char -> char.isDigit() } },
+                    label = { Text("Limit (max 6000)") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val newLimit = newLimitStr.toIntOrNull() ?: 2000
+                    if (newLimit in 1..6000 && user != null) {
+                        onUpdateUser(user.copy(dailyCalorieLimit = newLimit))
+                    }
+                    showEditLimitDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditLimitDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showAddFoodDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddFoodDialog = false },
+            title = { Text("Additional Information") },
+            text = {
+                Column {
+                    Text("Provide photo and any additional details (weight, oil used) for accurate estimation.")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { foodCameraLauncher.launch(foodPhotoUriToPass) }, modifier = Modifier.weight(1f)) {
+                            Icon(painter = painterResource(id = android.R.drawable.ic_menu_camera), contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Camera")
+                        }
+                        Button(onClick = { localFoodGalleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Icon(painter = painterResource(id = android.R.drawable.ic_menu_gallery), contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Gallery")
+                        }
+                    }
+                    if (foodPhotoUri != null) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Text("Image selected!", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                            TextButton(onClick = { foodPhotoUri = null }) {
+                                Text("Clear Image", color = Color.Red)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = foodDesc,
+                        onValueChange = { foodDesc = it },
+                        label = { Text("E.g., 200g, less oil, cooked in butter") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isUploadingFood = true
+                        coroutineScope.launch {
+                            if (foodPhotoUri != null) {
+                                currentCloudUrl = uploadFileToCloudinary(foodPhotoUri!!)
+                                try {
+                                    val bitmap = android.graphics.BitmapFactory.decodeFile(foodPhotoUri!!)
+                                    currentAnalysisResult = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                            isUploadingFood = false
+                            showAddFoodDialog = false
+                            if (currentAnalysisResult != null) {
+                                showAnalysisResultDialog = true
+                            }
+                        }
+                    },
+                    enabled = !isUploadingFood && foodPhotoUri != null
+                ) {
+                    if (isUploadingFood) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Analyzing...")
+                    } else {
+                        Text("Analyze")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddFoodDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showAnalysisResultDialog && currentAnalysisResult != null) {
+        val result = currentAnalysisResult!!
+        AlertDialog(
+            onDismissRequest = { showAnalysisResultDialog = false },
+            title = { Text("Analysis Result") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    if (!result.success) {
+                        Text("Analysis Failed: ${result.errorMessage}", color = Color.Red)
+                    } else {
+                        Text(result.dishName, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Est. Weight: ${result.weightGrams}g", fontSize = 14.sp, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Text("Summary", fontWeight = FontWeight.Bold)
+                        Text("${result.calories} kcal | ${result.protein}g Protein | ${result.carbohydrates}g Carbs | ${result.fats}g Fat")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Text("Micronutrients", fontWeight = FontWeight.Bold)
+                        Text(result.vitaminsAndMinerals, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (result.deficiencyWarnings.isNotBlank() && result.deficiencyWarnings != "None detected") {
+                            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Warning, contentDescription = "Warning", tint = Color(0xFFD32F2F))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Deficiency Alerts", fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(result.deficiencyWarnings, fontSize = 14.sp, color = Color(0xFFD32F2F))
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Are you going to consume this?", fontWeight = FontWeight.Bold)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onAddFood(FoodEntity(
+                        description = foodDesc,
+                        photoUri = foodPhotoUri,
+                        cloudUrl = currentCloudUrl,
+                        aiAnalysis = "${result.calories} kcal, ${result.protein}g protein",
+                        calories = result.calories,
+                        carbs = result.carbohydrates,
+                        protein = result.protein,
+                        fat = result.fats,
+                        dishName = result.dishName,
+                        weightGrams = result.weightGrams,
+                        micronutrients = result.vitaminsAndMinerals,
+                        deficiencyWarnings = result.deficiencyWarnings,
+                        isConsumed = true
+                    ))
+                    showAnalysisResultDialog = false
+                    currentAnalysisResult = null
+                }) { Text("Yes (Track)") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    onAddFood(FoodEntity(
+                        description = foodDesc,
+                        photoUri = foodPhotoUri,
+                        cloudUrl = currentCloudUrl,
+                        aiAnalysis = "${result.calories} kcal, ${result.protein}g protein",
+                        calories = result.calories,
+                        carbs = result.carbohydrates,
+                        protein = result.protein,
+                        fat = result.fats,
+                        dishName = result.dishName,
+                        weightGrams = result.weightGrams,
+                        micronutrients = result.vitaminsAndMinerals,
+                        deficiencyWarnings = result.deficiencyWarnings,
+                        isConsumed = false
+                    ))
+                    showAnalysisResultDialog = false
+                    currentAnalysisResult = null
+                }) { Text("No (Inquiry Only)") }
+            }
+        )
+    }
+}
+
 @Composable
 fun RecordsScreen(
     medicines: List<MedicineEntity>, 
@@ -2937,6 +3557,7 @@ fun InsightsScreen(
     var isChatLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
+        viewModel.ensureContextLoaded(user, vitals, medicines, reports, foods, steps, hr, calories)
         viewModel.generateInsights(user, vitals, medicines, reports, foods, steps, hr, calories)
         chatMessages = listOf("model" to "Hello! I am your AI Health Assistant. What questions do you have about your health status?")
     }

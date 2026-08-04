@@ -30,7 +30,8 @@ data class UserEntity(
     val emergencyContactPhone: String = "",
     val sosContactPreference: String = "Ask",
     val sosActionPreference: String = "Ask",
-    val customSosMessage: String = ""
+    val customSosMessage: String = "",
+    val dailyCalorieLimit: Int = 2000
 )
 
 @Entity(tableName = "vitals")
@@ -69,7 +70,8 @@ data class ReportEntity(
     val uploadDate: String,
     val syncedToCloud: Boolean = false,
     val cloudUrl: String? = null,
-    val reportSummary: String? = null
+    val reportSummary: String? = null,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "foods")
@@ -80,6 +82,14 @@ data class FoodEntity(
     val cloudUrl: String? = null,
     val aiAnalysis: String? = null,
     val calories: Int? = null,
+    val carbs: Int? = null,
+    val protein: Int? = null,
+    val fat: Int? = null,
+    val dishName: String? = null,
+    val weightGrams: Int? = null,
+    val micronutrients: String? = null,
+    val deficiencyWarnings: String? = null,
+    val isConsumed: Boolean = true,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -145,7 +155,7 @@ interface SwasthyaDao {
     suspend fun deletePhysician(physician: PhysicianEntity)
 }
 
-@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class], version = 14, exportSchema = false)
+@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class], version = 16, exportSchema = false)
 abstract class SwasthyaDatabase : RoomDatabase() {
     abstract fun swasthyaDao(): SwasthyaDao
 
