@@ -6,6 +6,7 @@ import com.example.swasthya.data.MedicineEntity
 import com.example.swasthya.data.ReportEntity
 import com.example.swasthya.data.UserEntity
 import com.example.swasthya.data.VitalsEntity
+import com.example.swasthya.data.PhysicianEntity
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.auth.FirebaseAuth
 import java.text.SimpleDateFormat
@@ -175,5 +176,30 @@ object FirestoreSync {
             .set(activityData)
             .addOnSuccessListener { Log.d(TAG, "Daily activity synced successfully") }
             .addOnFailureListener { e -> Log.e(TAG, "Error syncing daily activity", e) }
+    }
+
+    fun syncPhysician(userIdPhone: String, physician: PhysicianEntity) {
+        val userId = getUserId(userIdPhone)
+        val physicianData = hashMapOf(
+            "name" to physician.name,
+            "hospital" to physician.hospital,
+            "phone" to physician.phone
+        )
+        db.collection("users").document(userId)
+            .collection("physicians")
+            .document(physician.id.toString())
+            .set(physicianData)
+            .addOnSuccessListener { Log.d(TAG, "Physician synced successfully") }
+            .addOnFailureListener { e -> Log.e(TAG, "Error syncing physician", e) }
+    }
+
+    fun deletePhysician(userIdPhone: String, physician: PhysicianEntity) {
+        val userId = getUserId(userIdPhone)
+        db.collection("users").document(userId)
+            .collection("physicians")
+            .document(physician.id.toString())
+            .delete()
+            .addOnSuccessListener { Log.d(TAG, "Physician deleted from Firestore") }
+            .addOnFailureListener { e -> Log.e(TAG, "Error deleting physician from Firestore", e) }
     }
 }

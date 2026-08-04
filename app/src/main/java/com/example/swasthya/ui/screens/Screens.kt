@@ -1,7 +1,9 @@
 package com.example.swasthya.ui.screens
 
+import com.example.swasthya.R
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.Color
@@ -31,6 +34,7 @@ import com.example.swasthya.data.MedicineEntity
 import com.example.swasthya.data.VitalsEntity
 import com.example.swasthya.data.UserEntity
 import com.example.swasthya.data.FoodEntity
+import com.example.swasthya.data.ReportEntity
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
@@ -50,7 +54,6 @@ import java.time.temporal.ChronoUnit
 import android.app.Activity
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import com.example.swasthya.data.ReportEntity
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
@@ -89,59 +92,62 @@ fun AuthScreen(onNavigateToDashboard: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Default.Favorite,
-            contentDescription = "Logo",
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(120.dp)
+        androidx.compose.foundation.Image(
+            painter = painterResource(id = R.drawable.medassist_logo_circle),
+            contentDescription = "MedAssist Logo",
+            modifier = Modifier.size(150.dp)
         )
         Spacer(modifier = Modifier.height(24.dp))
-        Text("Swasthya", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("MedAssist", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text("Your personal health companion", fontSize = 16.sp, color = MaterialTheme.colorScheme.secondary)
         Spacer(modifier = Modifier.height(64.dp))
-        Button(
-            onClick = {
-                coroutineScope.launch {
-                    try {
-                        val credentialManager = CredentialManager.create(context)
-                        val googleIdOption = GetGoogleIdOption.Builder()
-                            .setFilterByAuthorizedAccounts(false)
-                            .setServerClientId("368924275183-7n8svof54eog86otqbdfi6482incj49n.apps.googleusercontent.com")
-                            .setAutoSelectEnabled(true)
-                            .build()
+        
+        val onSignInTrigger = {
+            coroutineScope.launch {
+                try {
+                    val credentialManager = CredentialManager.create(context)
+                    val googleIdOption = GetGoogleIdOption.Builder()
+                        .setFilterByAuthorizedAccounts(false)
+                        .setServerClientId("368924275183-7n8svof54eog86otqbdfi6482incj49n.apps.googleusercontent.com")
+                        .setAutoSelectEnabled(true)
+                        .build()
 
-                        val request = GetCredentialRequest.Builder()
-                            .addCredentialOption(googleIdOption)
-                            .build()
+                    val request = GetCredentialRequest.Builder()
+                        .addCredentialOption(googleIdOption)
+                        .build()
 
-                        val result = credentialManager.getCredential(context, request)
-                        val credential = result.credential
-                        
-                        if (credential is androidx.credentials.CustomCredential &&
-                            credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-                        ) {
-                            val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                            val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
-                            auth.signInWithCredential(authCredential).addOnCompleteListener { task ->
-                                if (task.isSuccessful) {
-                                    onNavigateToDashboard()
-                                } else {
-                                    Log.e("Auth", "Firebase Auth Failed", task.exception)
-                                }
+                    val result = credentialManager.getCredential(context, request)
+                    val credential = result.credential
+                    
+                    if (credential is androidx.credentials.CustomCredential &&
+                        credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                    ) {
+                        val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                        val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
+                        auth.signInWithCredential(authCredential).addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                onNavigateToDashboard()
+                            } else {
+                                Log.e("Auth", "Firebase Auth Failed", task.exception)
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.e("Auth", "Google Sign In Failed", e)
                     }
+                } catch (e: Exception) {
+                    Log.e("Auth", "Google Sign In Failed", e)
                 }
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(28.dp)
-        ) {
-            Icon(Icons.Default.AccountCircle, contentDescription = "Google Icon")
-            Spacer(Modifier.width(8.dp))
-            Text("Sign in with Google", fontSize = 18.sp)
+            }
         }
+
+        androidx.compose.foundation.Image(
+            painter = painterResource(id = R.drawable.btn_google_continue),
+            contentDescription = "Continue with Google",
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .height(48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onSignInTrigger() },
+            contentScale = ContentScale.Fit
+        )
     }
 }
 
@@ -164,7 +170,10 @@ fun DashboardScreen(
     onNavigateToInsights: (String, String, String) -> Unit = { _, _, _ -> },
     onSignOut: () -> Unit = {},
     startWithFoodLog: Boolean = false,
-    onShareWithPhysician: () -> Unit = {}
+    onShareWithPhysician: () -> Unit = {},
+    physicians: List<com.example.swasthya.data.PhysicianEntity> = emptyList(),
+    onAddPhysician: (com.example.swasthya.data.PhysicianEntity) -> Unit = {},
+    onDeletePhysician: (com.example.swasthya.data.PhysicianEntity) -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(if (startWithFoodLog) 2 else 0) }
     
@@ -246,31 +255,148 @@ fun DashboardScreen(
         }
     }
 
+    val requestNotificationPermission = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        onSyncRequested()
+    }
+
     LaunchedEffect(Unit) {
-        try {
-            val status = HealthConnectClient.getSdkStatus(context)
-            if (status == HealthConnectClient.SDK_AVAILABLE) {
-                val client = HealthConnectClient.getOrCreate(context)
-                val granted = client.permissionController.getGrantedPermissions()
-                if (granted.containsAll(permissions)) {
-                    val now = Instant.now()
-                    val startOfDay = now.truncatedTo(ChronoUnit.DAYS)
-                    
-                    val stepsResponse = client.readRecords(ReadRecordsRequest(StepsRecord::class, timeRangeFilter = TimeRangeFilter.between(startOfDay, now)))
-                    steps = stepsResponse.records.sumOf { it.count }.toString()
-                    
-                    val hrResponse = client.readRecords(ReadRecordsRequest(HeartRateRecord::class, timeRangeFilter = TimeRangeFilter.between(startOfDay, now)))
-                    if (hrResponse.records.isNotEmpty()) hr = hrResponse.records.last().samples.last().beatsPerMinute.toString()
-                    
-                    val calResponse = client.readRecords(ReadRecordsRequest(TotalCaloriesBurnedRecord::class, timeRangeFilter = TimeRangeFilter.between(startOfDay, now)))
-                    calories = calResponse.records.sumOf { it.energy.inKilocalories }.toLong().toString()
-                    
-                    com.example.swasthya.FirestoreSync.syncDailyActivity(user?.phone ?: "anonymous", steps, hr, calories)
-                }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val hasNotificationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!hasNotificationPermission) {
+                requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                onSyncRequested()
             }
-        } catch(e: Exception) { }
+        } else {
+            onSyncRequested()
+        }
     }
     
+    var isFabMenuExpanded by remember { mutableStateOf(false) }
+
+    var pendingScanReportFile by remember { mutableStateOf<File?>(null) }
+    var scanReportNameInput by remember { mutableStateOf("") }
+    var isUploadingScanReport by remember { mutableStateOf(false) }
+
+    val scannerOptions = remember {
+        GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(5)
+            .setResultFormats(
+                GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
+                GmsDocumentScannerOptions.RESULT_FORMAT_PDF
+            )
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+    }
+    val docScanner = remember { GmsDocumentScanning.getClient(scannerOptions) }
+
+    val docScannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            scanResult?.pdf?.let { pdf ->
+                val uri = pdf.uri
+                val fileName = "Scan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.pdf"
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val outFile = File(context.filesDir, fileName)
+                    val outputStream = FileOutputStream(outFile)
+                    inputStream?.copyTo(outputStream)
+                    inputStream?.close()
+                    outputStream.close()
+                    pendingScanReportFile = outFile
+                    scanReportNameInput = ""
+                } catch (e: Exception) {
+                    Log.e("Scanner", "Error saving scanned file", e)
+                }
+            } ?: scanResult?.pages?.firstOrNull()?.let { page ->
+                val uri = page.imageUri
+                val fileName = "Scan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val outFile = File(context.filesDir, fileName)
+                    val outputStream = FileOutputStream(outFile)
+                    inputStream?.copyTo(outputStream)
+                    inputStream?.close()
+                    outputStream.close()
+                    pendingScanReportFile = outFile
+                    scanReportNameInput = ""
+                } catch (e: Exception) {
+                    Log.e("Scanner", "Error saving scanned file", e)
+                }
+            }
+        }
+    }
+
+    val docPdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val fileName = "Upload_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.pdf"
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val outFile = File(context.filesDir, fileName)
+                val outputStream = FileOutputStream(outFile)
+                inputStream?.copyTo(outputStream)
+                inputStream?.close()
+                outputStream.close()
+                pendingScanReportFile = outFile
+                scanReportNameInput = ""
+            } catch (e: Exception) {
+                Log.e("PDFPicker", "Error saving PDF file", e)
+            }
+        }
+    }
+
+    var isPharmaLensScannerLoading by remember { mutableStateOf(false) }
+    var pharmaLensScanAnalysis by remember { mutableStateOf<com.example.swasthya.MedicineAnalysis?>(null) }
+    var showPharmaLensScanDialog by remember { mutableStateOf(false) }
+    val pharmaLensScanPhotoFile = remember { File(context.filesDir, "PharmaScan_${System.currentTimeMillis()}.jpg") }
+    val pharmaLensScanPhotoUri = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pharmaLensScanPhotoFile) }
+
+    val pharmaLensScanCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            isPharmaLensScannerLoading = true
+            coroutineScope.launch {
+                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(context.contentResolver, pharmaLensScanPhotoUri))
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, pharmaLensScanPhotoUri)
+                }
+                val analysis = com.example.swasthya.GeminiHelper.analyzeMedicine(bitmap)
+                pharmaLensScanAnalysis = analysis
+                isPharmaLensScannerLoading = false
+                if (analysis != null) {
+                    showPharmaLensScanDialog = true
+                } else {
+                    android.widget.Toast.makeText(context, "AI service is temporarily unavailable. Please try again shortly.", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    var showFoodScanDialog by remember { mutableStateOf(false) }
+    var foodScanDesc by remember { mutableStateOf("") }
+    var foodScanPhotoUri by remember { mutableStateOf<String?>(null) }
+    var isUploadingFoodScan by remember { mutableStateOf(false) }
+    var selectedFoodForPopup by remember { mutableStateOf<FoodEntity?>(null) }
+
+    val foodScanPhotoFile = remember { File(context.filesDir, "FoodScan_${System.currentTimeMillis()}.jpg") }
+    val foodScanPhotoUriToPass = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", foodScanPhotoFile) }
+    val foodScanCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            foodScanPhotoUri = foodScanPhotoFile.absolutePath
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
@@ -299,14 +425,376 @@ fun DashboardScreen(
                     onClick = { selectedTab = 3 }
                 )
             }
+        },
+        floatingActionButton = {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (isFabMenuExpanded) {
+                    // Option 1: PDF Upload Option
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Text("PDF Upload (Reports)", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
+                        FloatingActionButton(
+                            onClick = {
+                                isFabMenuExpanded = false
+                                docPdfPickerLauncher.launch("application/pdf")
+                            },
+                            modifier = Modifier.size(48.dp),
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "PDF Upload", modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // Option 2: Food Upload
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Text("Food Upload", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
+                        FloatingActionButton(
+                            onClick = {
+                                isFabMenuExpanded = false
+                                foodScanPhotoUri = null
+                                foodScanDesc = ""
+                                foodScanCameraLauncher.launch(foodScanPhotoUriToPass)
+                                showFoodScanDialog = true
+                            },
+                            modifier = Modifier.size(48.dp),
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Food Upload", modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // Option 3: Pharma Lens Medicine Check
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Text("Pharma Lens Medicine Check", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
+                        FloatingActionButton(
+                            onClick = {
+                                isFabMenuExpanded = false
+                                pharmaLensScanCameraLauncher.launch(pharmaLensScanPhotoUri)
+                            },
+                            modifier = Modifier.size(48.dp),
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "Pharma Lens", modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    // Option 4: Prescription Scan
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(8.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Text("Prescription Scan", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
+                        FloatingActionButton(
+                            onClick = {
+                                isFabMenuExpanded = false
+                                docScanner.getStartScanIntent(context as Activity)
+                                    .addOnSuccessListener { intentSender ->
+                                        docScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                                    }
+                                    .addOnFailureListener { e -> Log.e("Scanner", "Error starting scanner", e) }
+                            },
+                            modifier = Modifier.size(48.dp),
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Prescription Scan", modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+
+                // Main FAB (Camera Icon or X Close Icon)
+                FloatingActionButton(
+                    onClick = {
+                        isFabMenuExpanded = !isFabMenuExpanded
+                    },
+                    containerColor = if (isFabMenuExpanded) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+                    contentColor = if (isFabMenuExpanded) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape
+                ) {
+                    if (isFabMenuExpanded) {
+                        Icon(Icons.Default.Close, contentDescription = "Close Menu")
+                    } else {
+                        Icon(
+                            painter = painterResource(id = android.R.drawable.ic_menu_camera),
+                            contentDescription = "Camera Options"
+                        )
+                    }
+                }
+            }
         }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (selectedTab) {
-                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician)
+                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood)
                 1 -> VitalsScreen(vitals, onAddVitals, onSyncRequested = {})
-                2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, foods, onAddFood, onNavigateToReports, startWithFoodLog)
-                3 -> ProfileScreen(user, onUpdateUser, onNavigateToProfile, onSignOut)
+                2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, onNavigateToReports)
+                3 -> ProfileScreen(
+                    user = user,
+                    onUpdateUser = onUpdateUser,
+                    onEditProfile = onNavigateToProfile,
+                    onSignOut = onSignOut,
+                    physicians = physicians,
+                    onAddPhysician = onAddPhysician,
+                    onDeletePhysician = onDeletePhysician
+                )
+            }
+
+            // Scrim overlay
+            if (isFabMenuExpanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            isFabMenuExpanded = false
+                        }
+                )
+            }
+
+            // Prescription / Report naming Dialog
+            if (pendingScanReportFile != null) {
+                AlertDialog(
+                    onDismissRequest = { pendingScanReportFile = null },
+                    title = { Text("Name Your Report") },
+                    text = {
+                        Column {
+                            Text("What kind of report is this? (e.g. Blood Test, Prescription, X-Ray)")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = scanReportNameInput,
+                                onValueChange = { scanReportNameInput = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Report Name") }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val file = pendingScanReportFile!!
+                                val finalName = if (scanReportNameInput.isNotBlank()) scanReportNameInput else file.name
+                                isUploadingScanReport = true
+                                pendingScanReportFile = null
+                                coroutineScope.launch {
+                                    val aiSummary = try {
+                                        com.example.swasthya.GeminiHelper.analyzeMedicalReport(context, file.absolutePath)
+                                    } catch(e: Exception) { null }
+                                    
+                                    val cloudUrl = try {
+                                        uploadFileToCloudinary(file.absolutePath)
+                                    } catch(e: Exception) { null }
+                                    
+                                    onAddReport(
+                                        ReportEntity(
+                                            fileName = finalName,
+                                            localUri = file.absolutePath,
+                                            cloudUrl = cloudUrl,
+                                            reportSummary = aiSummary,
+                                            uploadDate = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
+                                        )
+                                    )
+                                    isUploadingScanReport = false
+                                    android.widget.Toast.makeText(context, "Report Saved Successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingScanReportFile = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            // Food Scan log Dialog
+            if (showFoodScanDialog) {
+                AlertDialog(
+                    onDismissRequest = { showFoodScanDialog = false },
+                    title = { Text("Log Food Scan") },
+                    text = {
+                        Column {
+                            Text("Take a photo of your food/meal to scan with AI.")
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { foodScanCameraLauncher.launch(foodScanPhotoUriToPass) }, 
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Search, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (foodScanPhotoUri == null) "Take Photo (Required)" else "Photo Captured!")
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedTextField(
+                                value = foodScanDesc,
+                                onValueChange = { foodScanDesc = it },
+                                label = { Text("What's in this? (e.g. 2 eggs, toast)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 3
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                isUploadingFoodScan = true
+                                coroutineScope.launch {
+                                    var cloudUrl: String? = null
+                                    var aiAnalysis: String? = null
+                                    var calories: Int? = null
+                                    if (foodScanPhotoUri != null) {
+                                        cloudUrl = uploadFileToCloudinary(foodScanPhotoUri!!)
+                                        try {
+                                            val bitmap = android.graphics.BitmapFactory.decodeFile(foodScanPhotoUri!!)
+                                            val analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodScanDesc)
+                                            aiAnalysis = analysis.summary
+                                            calories = analysis.calories
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    }
+                                    val newFood = FoodEntity(description = foodScanDesc, photoUri = foodScanPhotoUri, cloudUrl = cloudUrl, aiAnalysis = aiAnalysis, calories = calories)
+                                    onAddFood(newFood)
+                                    isUploadingFoodScan = false
+                                    showFoodScanDialog = false
+                                    selectedFoodForPopup = newFood
+                                }
+                            },
+                            enabled = !isUploadingFoodScan && foodScanPhotoUri != null
+                        ) {
+                            if (isUploadingFoodScan) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Uploading...")
+                            } else {
+                                Text("Save")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showFoodScanDialog = false }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            // Food Scan Result Pop-up (Immediate feedback)
+            if (selectedFoodForPopup != null) {
+                AlertDialog(
+                    onDismissRequest = { selectedFoodForPopup = null },
+                    title = { Text(selectedFoodForPopup!!.description.ifBlank { "Logged Meal" }) },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            if (selectedFoodForPopup!!.photoUri != null) {
+                                coil.compose.AsyncImage(
+                                    model = selectedFoodForPopup!!.photoUri,
+                                    contentDescription = "Food Image",
+                                    modifier = Modifier.fillMaxWidth().height(220.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                            if (selectedFoodForPopup!!.aiAnalysis != null) {
+                                Text(
+                                    text = "AI Analysis:\n${selectedFoodForPopup!!.aiAnalysis}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            Text("Logged: ${SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date(selectedFoodForPopup!!.timestamp))}")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { selectedFoodForPopup = null }) {
+                            Text("Close")
+                        }
+                    }
+                )
+            }
+
+            // Pharma Lens Result Dialog
+            if (showPharmaLensScanDialog && pharmaLensScanAnalysis != null) {
+                PharmaLensResultDialog(
+                    analysis = pharmaLensScanAnalysis!!,
+                    onDismiss = { showPharmaLensScanDialog = false },
+                    onConfirmConsume = { timesPerDay ->
+                        showPharmaLensScanDialog = false
+                        val cal = java.util.Calendar.getInstance()
+                        onAddMedicine(MedicineEntity(
+                            name = pharmaLensScanAnalysis!!.brand,
+                            dosage = pharmaLensScanAnalysis!!.dosage,
+                            schedule = "$timesPerDay times a day",
+                            explanation = pharmaLensScanAnalysis!!.use,
+                            timeInMillis = cal.timeInMillis,
+                            timeLabel = SimpleDateFormat("hh:mm a", Locale.US).format(cal.time),
+                            reminderType = "Medicine",
+                            hasImage = false
+                        ))
+                    }
+                )
+            }
+
+            // AI Processing Overlay
+            if (isUploadingScanReport || isPharmaLensScannerLoading) {
+                AlertDialog(
+                    onDismissRequest = {},
+                    confirmButton = {},
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text("AI Processing, please wait...")
+                        }
+                    }
+                )
             }
         }
     }
@@ -373,235 +861,565 @@ fun HomeScreen(
     reports: List<ReportEntity> = emptyList(),
     medicines: List<MedicineEntity> = emptyList(),
     onNavigateToInsights: (String, String, String) -> Unit = { _, _, _ -> },
-    onShareWithPhysician: () -> Unit = {}
+    onShareWithPhysician: () -> Unit = {},
+    onAddFood: (FoodEntity) -> Unit = {}
 ) {
-    val todayStart = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
-    
-    val caloriesConsumed = foods.filter { it.timestamp >= todayStart }.sumOf { it.calories ?: 0 }
+    var currentView by remember { mutableStateOf("Home") }
 
-    var showQuickSummaryDialog by remember { mutableStateOf(false) }
-    var quickSummaryText by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+    var drugInteractionResult by remember { mutableStateOf<com.example.swasthya.DrugInteractionResult?>(null) }
+    var isLoadingInteractions by remember { mutableStateOf(false) }
+    var showInteractionDetailDialog by remember { mutableStateOf(false) }
 
-    var showSosDialog by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-
-    val triggerCall = {
-        val contact = if (user?.sosContactPreference == "911") "911" else user?.emergencyContactPhone?.takeIf { it.isNotBlank() } ?: "911"
-        val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$contact"))
-        context.startActivity(intent)
-    }
-
-    val triggerText = {
-        val contact = if (user?.sosContactPreference == "911") "911" else user?.emergencyContactPhone?.takeIf { it.isNotBlank() } ?: "911"
-        val defaultMsg = "EMERGENCY! I need help. Blood Type: ${user?.bloodGroup ?: "Unknown"}, Conditions: ${user?.disease ?: "None"}. Please contact me."
-        val msg = if (user?.customSosMessage.isNullOrBlank()) defaultMsg else user!!.customSosMessage
-        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:$contact")).apply {
-            putExtra("sms_body", msg)
+    LaunchedEffect(medicines) {
+        val medicineNames = medicines.mapNotNull { it.name }.filter { it.isNotBlank() }
+        if (medicineNames.size >= 2) {
+            isLoadingInteractions = true
+            try {
+                val result = com.example.swasthya.GeminiHelper.checkDrugInteractions(medicineNames)
+                drugInteractionResult = result
+            } catch (e: Exception) {
+                drugInteractionResult = com.example.swasthya.DrugInteractionResult(
+                    hasInteraction = false,
+                    description = "Unable to complete interaction screening: ${e.message}",
+                    interactedDrugs = emptyList()
+                )
+            } finally {
+                isLoadingInteractions = false
+            }
+        } else {
+            drugInteractionResult = null
         }
-        context.startActivity(intent)
     }
 
-    if (showSosDialog) {
-        AlertDialog(
-            onDismissRequest = { showSosDialog = false },
-            title = { Text("Emergency Action") },
-            text = { Text("What do you want to do?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showSosDialog = false
-                        triggerCall()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) {
-                    Text("Call")
+    if (currentView == "FoodLog") {
+        FoodLogScreen(
+            foods = foods,
+            onAddFood = onAddFood,
+            onNavigateBack = { currentView = "Home" }
+        )
+    } else {
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val caloriesConsumed = foods.filter { it.timestamp >= todayStart }.sumOf { it.calories ?: 0 }
+
+        var showQuickSummaryDialog by remember { mutableStateOf(false) }
+        var quickSummaryText by remember { mutableStateOf<String?>(null) }
+        val coroutineScope = rememberCoroutineScope()
+        var showSosDialog by remember { mutableStateOf(false) }
+        val context = LocalContext.current
+
+        val triggerCall = {
+            val isEmergencyServices = user?.sosContactPreference == "112" || user?.sosContactPreference == "911"
+            val contact = if (isEmergencyServices) "112" else user?.emergencyContactPhone?.takeIf { it.isNotBlank() } ?: "112"
+            val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$contact"))
+            context.startActivity(intent)
+        }
+
+        val triggerText = {
+            val isEmergencyServices = user?.sosContactPreference == "112" || user?.sosContactPreference == "911"
+            val contact = if (isEmergencyServices) "112" else user?.emergencyContactPhone?.takeIf { it.isNotBlank() } ?: "112"
+            val defaultMsg = "EMERGENCY! I need help. Blood Type: ${user?.bloodGroup ?: "Unknown"}, Conditions: ${user?.disease ?: "None"}. Please contact me."
+            val msg = if (user?.customSosMessage.isNullOrBlank()) defaultMsg else user!!.customSosMessage
+            val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:$contact")).apply {
+                putExtra("sms_body", msg)
+            }
+            context.startActivity(intent)
+        }
+
+        if (showInteractionDetailDialog && drugInteractionResult != null) {
+            val result = drugInteractionResult!!
+            AlertDialog(
+                onDismissRequest = { showInteractionDetailDialog = false },
+                title = {
+                    Text(
+                        text = if (result.hasInteraction) "⚠️ Potential Drug Interaction" else "✅ Medication Compatibility",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = if (result.hasInteraction) "Risk Summary:" else "Status Summary:",
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(result.description)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Disclaimer: This check is for informational purposes only and is powered by Google Gemini. Please consult your physician or pharmacist to verify your medication schedule.",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { showInteractionDetailDialog = false }) {
+                        Text("Close")
+                    }
                 }
-            },
-            dismissButton = {
-                Button(
-                    onClick = {
-                        showSosDialog = false
-                        triggerText()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Text("Text (SMS)")
+            )
+        }
+
+        if (showSosDialog) {
+            AlertDialog(
+                onDismissRequest = { showSosDialog = false },
+                title = { Text("Emergency Action") },
+                text = { Text("What do you want to do?") },
+                confirmButton = {
+                    Button(
+                        onClick = { showSosDialog = false; triggerCall() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) { Text("Call") }
+                },
+                dismissButton = {
+                    Button(
+                        onClick = { showSosDialog = false; triggerText() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) { Text("Text (SMS)") }
+                }
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Good morning,", fontSize = 16.sp, color = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(user?.name?.takeIf { it.isNotBlank() } ?: "User", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("👋", fontSize = 24.sp)
+                    }
+                    Text("Let's take care of your health today.", fontSize = 14.sp, color = Color.Gray)
+                }
+                IconButton(onClick = { /* Notifications */ }) {
+                    Icon(Icons.Default.Notifications, contentDescription = "Notifications")
                 }
             }
-        )
-    }
 
+            // Emergency Alert
+            Button(
+                onClick = { 
+                    when (user?.sosActionPreference) {
+                        "Call" -> triggerCall()
+                        "Text" -> triggerText()
+                        else -> showSosDialog = true
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Warning, contentDescription = "Emergency", tint = Color.White)
+                Spacer(Modifier.width(8.dp))
+                Text("SOS / EMERGENCY ALERT", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Dynamic Drug Interaction Checker Card
+            if (isLoadingInteractions) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Analyzing Drug Interactions...", fontWeight = FontWeight.Bold)
+                            Text("Gemini is screening your active medications...", fontSize = 13.sp, color = Color.Gray)
+                        }
+                    }
+                }
+            } else {
+                val result = drugInteractionResult
+                if (result != null) {
+                    val containerColor = if (result.hasInteraction) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
+                    val tintColor = if (result.hasInteraction) Color.Red else Color(0xFF2E7D32)
+                    val icon = if (result.hasInteraction) Icons.Default.Warning else Icons.Default.CheckCircle
+                    val title = if (result.hasInteraction) "Potential Drug Interaction Detected" else "Medication Compatibility Check"
+                    val subtitle = if (result.hasInteraction) {
+                        "Interaction risk between: ${result.interactedDrugs.joinToString(", ")}"
+                    } else {
+                        "No known drug-drug interactions were identified for this combination."
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showInteractionDetailDialog = true },
+                        colors = CardDefaults.cardColors(containerColor = containerColor)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(icon, contentDescription = "Interaction Check Status", tint = tintColor, modifier = Modifier.size(28.dp))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(title, fontWeight = FontWeight.Bold, color = tintColor)
+                                Text(subtitle, color = Color.DarkGray, fontSize = 13.sp)
+                            }
+                            Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = "View Details", tint = tintColor)
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = "Checker Info", tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Drug Interaction Shield", fontWeight = FontWeight.Bold)
+                                Text("Add 2 or more medicines in Records to check compatibility automatically.", fontSize = 13.sp, color = Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Today's Summary
+            Text("Today's Summary", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Steps Card
+                Card(
+                    modifier = Modifier.weight(1f).aspectRatio(0.8f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F4FF))
+                ) {
+                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("👟", fontSize = 24.sp)
+                        Text("Steps", fontSize = 12.sp, color = Color.Gray)
+                        Text(steps, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1565C0))
+                        Text("/ 10,000", fontSize = 10.sp, color = Color.Gray)
+                    }
+                }
+                
+                // HR Card
+                Card(
+                    modifier = Modifier.weight(1f).aspectRatio(0.8f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF0F0))
+                ) {
+                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("❤️", fontSize = 24.sp)
+                        Text("Heart Rate", fontSize = 12.sp, color = Color.Gray)
+                        Text(hr, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFC62828))
+                        Text("bpm", fontSize = 10.sp, color = Color.Gray)
+                    }
+                }
+                
+                // Calories Card
+                Card(
+                    modifier = Modifier.weight(1f).aspectRatio(0.8f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7E6))
+                ) {
+                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🔥", fontSize = 24.sp)
+                        Text("Calories", fontSize = 12.sp, color = Color.Gray)
+                        Text(calories, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFEF6C00))
+                        Text("kcal", fontSize = 10.sp, color = Color.Gray)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Food Consumed Card
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { currentView = "FoodLog" },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9))
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("🍽️", fontSize = 32.sp)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Food Consumed", fontSize = 12.sp, color = Color.Gray)
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("$caloriesConsumed", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF2E7D32))
+                            Text(" / 2,000 kcal", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 2.dp))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { (caloriesConsumed / 2000f).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = Color(0xFF4CAF50),
+                            trackColor = Color(0xFFC8E6C9)
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Quick AI Summary Card
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { showQuickSummaryDialog = true },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5)) // Light Purple
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Star, contentDescription = "AI", tint = Color(0xFF7B1FA2), modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Quick AI Summary", fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
+                        Text("Get a snapshot of your health with AI.", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF7B1FA2))
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // AI Health Insights Button
+            Button(
+                onClick = { onNavigateToInsights(steps, hr, calories) },
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+            ) {
+                Text("📊 Full AI Health Insights", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // One-Tap Share
+            Button(
+                onClick = onShareWithPhysician,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Share, contentDescription = "Share")
+                Spacer(Modifier.width(8.dp))
+                Text("One-Tap Share with Physician")
+            }
+        }
+
+        if (showQuickSummaryDialog) {
+            AlertDialog(
+                onDismissRequest = { showQuickSummaryDialog = false },
+                title = { Text("âœ¨ Quick AI Summary") },
+                text = {
+                    if (quickSummaryText == null) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Generating summary...")
+                        }
+                        LaunchedEffect(Unit) {
+                            val todayStartCalendar = Calendar.getInstance().apply {
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }.timeInMillis
+                            val summary = com.example.swasthya.GeminiHelper.getQuickSummary(
+                                steps, hr, calories, foods.count { it.timestamp >= todayStartCalendar }, reports, medicines
+                            )
+                            quickSummaryText = summary
+                        }
+                    } else {
+                        Text(quickSummaryText!!)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { 
+                        showQuickSummaryDialog = false
+                        quickSummaryText = null 
+                    }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun FoodLogScreen(
+    foods: List<FoodEntity>,
+    onAddFood: (FoodEntity) -> Unit,
+    onNavigateBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var showAddFoodDialog by remember { mutableStateOf(false) }
+    var selectedFoodForPopup by remember { mutableStateOf<FoodEntity?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp)
     ) {
-        // Emergency Alert
-        Button(
-            onClick = { 
-                when (user?.sosActionPreference) {
-                    "Call" -> triggerCall()
-                    "Text" -> triggerText()
-                    else -> showSosDialog = true
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Icon(Icons.Default.Warning, contentDescription = "Emergency", tint = Color.White)
-            Spacer(Modifier.width(8.dp))
-            Text("SOS / EMERGENCY ALERT", color = Color.White, fontWeight = FontWeight.Bold)
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        // Health Connect Dashboard Cards
-        Text("Today's Activity", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Steps Card
-            Card(
-                modifier = Modifier.weight(1f).aspectRatio(1f),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)) // Light Blue
-            ) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("👟", fontSize = 32.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(steps, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1565C0))
-                    Text("Steps", fontSize = 12.sp, color = Color.Gray)
-                }
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
-            
-            // HR Card
-            Card(
-                modifier = Modifier.weight(1f).aspectRatio(1f),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)) // Light Red
-            ) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("❤️", fontSize = 32.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(hr, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFC62828))
-                    Text("bpm", fontSize = 12.sp, color = Color.Gray)
-                }
-            }
-            
-            // Calories Card
-            Card(
-                modifier = Modifier.weight(1f).aspectRatio(1f),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)) // Light Orange
-            ) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🔥", fontSize = 32.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(calories, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFEF6C00))
-                    Text("kcal", fontSize = 12.sp, color = Color.Gray)
-                }
-            }
+            Text("Food Log", fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Card(
-                modifier = Modifier.weight(1f).height(100.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)) // Light Green
-            ) {
-                Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🍽️", fontSize = 24.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("$caloriesConsumed", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF2E7D32))
-                    Text("Consumed", fontSize = 12.sp, color = Color.Gray)
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        // Quick AI Summary Button
         Button(
-            onClick = { showQuickSummaryDialog = true },
-            modifier = Modifier.fillMaxWidth().height(60.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer)
-        ) {
-            Text("✨ Quick AI Summary", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // AI Health Insights Button
-        Button(
-            onClick = { onNavigateToInsights(steps, hr, calories) },
-            modifier = Modifier.fillMaxWidth().height(60.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
-        ) {
-            Text("📊 Full AI Health Insights", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        
-        
-        // One-Tap Share
-        Button(
-            onClick = onShareWithPhysician,
+            onClick = { showAddFoodDialog = true },
             modifier = Modifier.fillMaxWidth().height(50.dp),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(Icons.Default.Share, contentDescription = "Share")
-            Spacer(Modifier.width(8.dp))
-            Text("One-Tap Share with Physician")
+            Icon(Icons.Default.Add, contentDescription = "Log Food")
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Log New Meal")
         }
         
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        foods.forEach { food ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .clickable { selectedFoodForPopup = food },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (food.photoUri != null) {
+                        Icon(Icons.Default.Search, contentDescription = "Photo attached", tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(food.description.ifBlank { "Logged Meal" }, fontWeight = FontWeight.Bold)
+                        Text("Logged: ${java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.US).format(java.util.Date(food.timestamp))}", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        if (foods.isEmpty()) {
+            Text("No meals logged yet.", color = Color.Gray, modifier = Modifier.align(Alignment.CenterHorizontally))
+        }
     }
-
-    if (showQuickSummaryDialog) {
+    
+    if (selectedFoodForPopup != null) {
         AlertDialog(
-            onDismissRequest = { showQuickSummaryDialog = false },
-            title = { Text("✨ Quick AI Summary") },
+            onDismissRequest = { selectedFoodForPopup = null },
+            title = { Text(selectedFoodForPopup!!.description.ifBlank { "Logged Meal" }) },
             text = {
-                if (quickSummaryText == null) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Generating summary...")
-                    }
-                    LaunchedEffect(Unit) {
-                        val todayStartCalendar = Calendar.getInstance().apply {
-                            set(Calendar.HOUR_OF_DAY, 0)
-                            set(Calendar.MINUTE, 0)
-                            set(Calendar.SECOND, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }.timeInMillis
-                        val summary = com.example.swasthya.GeminiHelper.getQuickSummary(
-                            steps, hr, calories, foods.count { it.timestamp >= todayStartCalendar }, reports, medicines
+                Column {
+                    if (selectedFoodForPopup!!.photoUri != null) {
+                        coil.compose.AsyncImage(
+                            model = selectedFoodForPopup!!.photoUri,
+                            contentDescription = "Food Image",
+                            modifier = Modifier.fillMaxWidth().height(250.dp)
                         )
-                        quickSummaryText = summary
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
-                } else {
-                    Text(quickSummaryText!!)
+                    if (selectedFoodForPopup!!.aiAnalysis != null) {
+                        Text(
+                            text = "AI Analysis:\n${selectedFoodForPopup!!.aiAnalysis}",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    Text("Logged: ${java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.US).format(java.util.Date(selectedFoodForPopup!!.timestamp))}")
                 }
             },
             confirmButton = {
-                Button(onClick = { 
-                    showQuickSummaryDialog = false
-                    quickSummaryText = null 
-                }) {
+                TextButton(onClick = { selectedFoodForPopup = null }) {
                     Text("Close")
                 }
             }
         )
     }
+
+    if (showAddFoodDialog) {
+        var foodDesc by remember { mutableStateOf("") }
+        var foodPhotoUri by remember { mutableStateOf<String?>(null) }
+        var isUploadingFood by remember { mutableStateOf(false) }
+        val foodPhotoFile = remember { java.io.File(context.filesDir, "Food_${System.currentTimeMillis()}.jpg") }
+        val foodPhotoUriToPass = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", foodPhotoFile) }
+        val foodCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+            if (success) {
+                foodPhotoUri = foodPhotoFile.absolutePath
+            }
+        }
+        
+        AlertDialog(
+            onDismissRequest = { showAddFoodDialog = false },
+            title = { Text("Log Food") },
+            text = {
+                Column {
+                    Text("Take a photo and describe the ingredients for AI calorie estimation.")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { foodCameraLauncher.launch(foodPhotoUriToPass) }, 
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (foodPhotoUri == null) "Take Photo (Required)" else "Photo Captured!")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = foodDesc,
+                        onValueChange = { foodDesc = it },
+                        label = { Text("What's in this? (e.g. 2 eggs, toast)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isUploadingFood = true
+                        coroutineScope.launch {
+                            var cloudUrl: String? = null
+                            var aiAnalysis: String? = null
+                            var calories: Int? = null
+                            if (foodPhotoUri != null) {
+                                cloudUrl = uploadFileToCloudinary(foodPhotoUri!!)
+                                try {
+                                    val bitmap = android.graphics.BitmapFactory.decodeFile(foodPhotoUri!!)
+                                    val analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
+                                    aiAnalysis = analysis.summary
+                                    calories = analysis.calories
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                            onAddFood(FoodEntity(description = foodDesc, photoUri = foodPhotoUri, cloudUrl = cloudUrl, aiAnalysis = aiAnalysis, calories = calories))
+                            isUploadingFood = false
+                            showAddFoodDialog = false
+                        }
+                    },
+                    enabled = !isUploadingFood
+                ) {
+                    if (isUploadingFood) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Uploading...")
+                    } else {
+                        Text("Save")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddFoodDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
+
 
 @Composable
 fun VitalsScreen(
@@ -791,31 +1609,127 @@ fun RecordsScreen(
     onDeleteMedicine: (MedicineEntity) -> Unit = {},
     reports: List<ReportEntity> = emptyList(),
     onAddReport: (ReportEntity) -> Unit = {},
-    foods: List<FoodEntity> = emptyList(),
-    onAddFood: (FoodEntity) -> Unit = {},
-    onNavigateToReports: () -> Unit = {},
-    startWithFoodLog: Boolean = false
+    onNavigateToReports: () -> Unit = {}
+) {
+    var currentView by remember { mutableStateOf("Menu") }
+
+    if (currentView == "Medications") {
+        MedicationsScreen(
+            medicines = medicines,
+            onAddMedicine = onAddMedicine,
+            onUpdateMedicine = onUpdateMedicine,
+            onDeleteMedicine = onDeleteMedicine,
+            onNavigateBack = { currentView = "Menu" }
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            Text("Records", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("Your health data in one place", fontSize = 16.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Medical Reports Card
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToReports() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.List, contentDescription = "Reports", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Medical Reports", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("View lab reports, prescriptions and documents", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Medications Card
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { currentView = "Medications" },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Notifications, contentDescription = "Medications", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Medications & Reminders", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Manage your medicines and meal reminders", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent Reports", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                TextButton(onClick = onNavigateToReports) {
+                    Text("See all")
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            val recentReports = reports.take(3)
+            recentReports.forEach { report ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.List, contentDescription = "Report")
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(report.fileName, fontWeight = FontWeight.Bold)
+                            Text("Uploaded: ${report.uploadDate}", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            if (recentReports.isEmpty()) {
+                Text("No recent reports.", color = Color.Gray)
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Stay Safe Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)) // Light orange background
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Safe", tint = Color(0xFFEF6C00), modifier = Modifier.size(40.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text("Stay Safe", fontWeight = FontWeight.Bold, color = Color(0xFFEF6C00))
+                        Text("Always keep your health records updated and share with your physician when needed.", fontSize = 12.sp, color = Color.DarkGray)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+fun MedicationsScreen(
+    medicines: List<MedicineEntity>,
+    onAddMedicine: (MedicineEntity) -> Unit,
+    onUpdateMedicine: (MedicineEntity) -> Unit,
+    onDeleteMedicine: (MedicineEntity) -> Unit,
+    onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
     var showAddMedicineDialog by remember { mutableStateOf(false) }
     var selectedMedicineForPopup by remember { mutableStateOf<MedicineEntity?>(null) }
-    var selectedFoodForPopup by remember { mutableStateOf<FoodEntity?>(null) }
-    
     val selectedMedicinesForDeletion = remember { androidx.compose.runtime.mutableStateListOf<MedicineEntity>() }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
-    
-    // Notification permission launcher
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { }
-
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-    
     val coroutineScope = rememberCoroutineScope()
+    
     var pharmaLensAnalysis by remember { mutableStateOf<com.example.swasthya.MedicineAnalysis?>(null) }
     var isPharmaLensLoading by remember { mutableStateOf(false) }
     var showPharmaLensDialog by remember { mutableStateOf(false) }
@@ -835,13 +1749,14 @@ fun RecordsScreen(
                 val analysis = com.example.swasthya.GeminiHelper.analyzeMedicine(bitmap)
                 pharmaLensAnalysis = analysis
                 isPharmaLensLoading = false
-                if (analysis != null) showPharmaLensDialog = true
+                if (analysis != null) {
+                    showPharmaLensDialog = true
+                } else {
+                    android.widget.Toast.makeText(context, "AI service is temporarily unavailable. Please try again shortly.", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
-
-    var expandedSection by remember { mutableStateOf<String?>(if (startWithFoodLog) "Food" else "Medicines") }
-    var showAddFoodDialog by remember { mutableStateOf(startWithFoodLog) }
 
     Column(
         modifier = Modifier
@@ -849,215 +1764,126 @@ fun RecordsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // --- Drug Interaction Alert Placeholder ---
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)) // Light red
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+            }
+            Text("Medications & Reminders", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Button(
+            onClick = { showAddMedicineDialog = true },
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Warning, contentDescription = "Alert", tint = Color.Red)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text("Drug Interaction Alert", fontWeight = FontWeight.Bold, color = Color.Red)
-                    Text("Warning: Do not take Aspirin with Ibuprofen.", color = Color.DarkGray, fontSize = 14.sp)
+            Icon(Icons.Default.Add, contentDescription = "Add")
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Add Reminder (Medicine/Meal)")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Pharma Lens Scanner
+        Button(
+            onClick = { pharmaLensCameraLauncher.launch(pharmaLensPhotoUri) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (isPharmaLensLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Analyzing...")
+            } else {
+                Icon(Icons.Default.Search, contentDescription = "Scan")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Pharma Lens Medicine Scanner")
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Your Schedule", fontWeight = FontWeight.Bold)
+            if (selectedMedicinesForDeletion.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${selectedMedicinesForDeletion.size} selected", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
+                    androidx.compose.material3.IconButton(onClick = { showDeleteConfirmation = true }) {
+                        Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "Delete Selected", tint = Color.Red)
+                    }
+                    androidx.compose.material3.IconButton(onClick = { selectedMedicinesForDeletion.clear() }) {
+                        Icon(androidx.compose.material.icons.Icons.Default.Close, contentDescription = "Cancel")
+                    }
                 }
             }
         }
-
-        // --- Medical Reports Section ---
-        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        medicines.forEach { med ->
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            val isSelected = selectedMedicinesForDeletion.contains(med)
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { onNavigateToReports() }.padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = { 
+                                if (isSelected) selectedMedicinesForDeletion.remove(med)
+                                else selectedMedicinesForDeletion.add(med)
+                            },
+                            onTap = {
+                                if (selectedMedicinesForDeletion.isNotEmpty()) {
+                                    if (isSelected) selectedMedicinesForDeletion.remove(med)
+                                    else selectedMedicinesForDeletion.add(med)
+                                } else {
+                                    selectedMedicineForPopup = med
+                                }
+                            }
+                        )
+                    }
+                    .padding(8.dp), 
+                verticalAlignment = Alignment.CenterVertically, 
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Medical Reports", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
-            }
-        }
-
-        // --- Medicines Section ---
-        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable { expandedSection = if (expandedSection == "Medicines") null else "Medicines" }.padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Medicines & Reminders", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Icon(if (expandedSection == "Medicines") androidx.compose.material.icons.Icons.Default.KeyboardArrowUp else androidx.compose.material.icons.Icons.Default.KeyboardArrowDown, contentDescription = null)
-                }
-                androidx.compose.animation.AnimatedVisibility(visible = expandedSection == "Medicines") {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Button(
-                            onClick = { showAddMedicineDialog = true },
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Add Reminder (Medicine/Meal)")
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Pharma Lens Scanner
-                        Button(
-                            onClick = { pharmaLensCameraLauncher.launch(pharmaLensPhotoUri) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            if (isPharmaLensLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Analyzing...")
-                            } else {
-                                Icon(Icons.Default.Search, contentDescription = "Scan")
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Pharma Lens Medicine Scanner")
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Your Schedule", fontWeight = FontWeight.Bold)
-                            if (selectedMedicinesForDeletion.isNotEmpty()) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${selectedMedicinesForDeletion.size} selected", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp))
-                                    androidx.compose.material3.IconButton(onClick = { showDeleteConfirmation = true }) {
-                                        Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "Delete Selected", tint = Color.Red)
-                                    }
-                                    androidx.compose.material3.IconButton(onClick = { selectedMedicinesForDeletion.clear() }) {
-                                        Icon(androidx.compose.material.icons.Icons.Default.Close, contentDescription = "Cancel")
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        medicines.forEach { med ->
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                            val isSelected = selectedMedicinesForDeletion.contains(med)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onLongPress = { 
-                                                if (isSelected) selectedMedicinesForDeletion.remove(med)
-                                                else selectedMedicinesForDeletion.add(med)
-                                            },
-                                            onTap = {
-                                                if (selectedMedicinesForDeletion.isNotEmpty()) {
-                                                    if (isSelected) selectedMedicinesForDeletion.remove(med)
-                                                    else selectedMedicinesForDeletion.add(med)
-                                                } else {
-                                                    selectedMedicineForPopup = med
-                                                }
-                                            }
-                                        )
-                                    }
-                                    .padding(8.dp), 
-                                verticalAlignment = Alignment.CenterVertically, 
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (med.photoUri != null) {
-                                        Icon(Icons.Default.Search, contentDescription = "Photo attached", modifier = Modifier.size(24.dp).padding(end = 8.dp), tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                    Column {
-                                        Text(med.name ?: "Unknown Medicine", fontWeight = FontWeight.Bold)
-                                        Text("${med.timeLabel} • ${med.reminderType}", fontSize = 12.sp, color = Color.Gray)
-                                    }
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Switch(checked = !med.isTaken, onCheckedChange = { isChecked ->
-                                        val updatedMed = med.copy(isTaken = !isChecked)
-                                        onUpdateMedicine(updatedMed)
-                                        
-                                        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                                        val intent = Intent(context, MedicineReminderReceiver::class.java)
-                                        val pendingIntent = PendingIntent.getBroadcast(
-                                            context,
-                                            med.timeInMillis.hashCode(),
-                                            intent,
-                                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                                        )
-                                        
-                                        if (updatedMed.isTaken) {
-                                            alarmManager.cancel(pendingIntent)
-                                            android.widget.Toast.makeText(context, "Reminder turned off", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            intent.putExtra("MEDICINE_NAME", updatedMed.name ?: "Your Medicine")
-                                            intent.putExtra("REMINDER_TYPE", updatedMed.reminderType)
-                                            intent.putExtra("IS_MEAL", updatedMed.reminderType.contains("MEAL"))
-                                            val newIntent = PendingIntent.getBroadcast(context, med.timeInMillis.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                                            try {
-                                                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, updatedMed.timeInMillis, newIntent)
-                                                android.widget.Toast.makeText(context, "Reminder turned on", android.widget.Toast.LENGTH_SHORT).show()
-                                            } catch (e: Exception) {
-                                                alarmManager.set(AlarmManager.RTC_WAKEUP, updatedMed.timeInMillis, newIntent)
-                                            }
-                                        }
-                                    })
-                                }
-                            }
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (med.photoUri != null) {
+                        Icon(Icons.Default.Search, contentDescription = "Photo attached", modifier = Modifier.size(24.dp).padding(end = 8.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Column {
+                        Text(med.name ?: "Unknown Medicine", fontWeight = FontWeight.Bold)
+                        Text("${med.timeLabel} Ã¢â‚¬Â¢ ${med.reminderType}", fontSize = 12.sp, color = Color.Gray)
                     }
                 }
-            }
-        }
-
-        // --- Food Log Section ---
-        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable { expandedSection = if (expandedSection == "Food") null else "Food" }.padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Food Consumed", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Icon(if (expandedSection == "Food") androidx.compose.material.icons.Icons.Default.KeyboardArrowUp else androidx.compose.material.icons.Icons.Default.KeyboardArrowDown, contentDescription = null)
-                }
-                androidx.compose.animation.AnimatedVisibility(visible = expandedSection == "Food") {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Button(
-                            onClick = { showAddFoodDialog = true },
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Log Food")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Log New Meal")
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = !med.isTaken, onCheckedChange = { isChecked ->
+                        val updatedMed = med.copy(isTaken = !isChecked)
+                        onUpdateMedicine(updatedMed)
                         
-                        Spacer(modifier = Modifier.height(16.dp))
+                        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                        val intent = android.content.Intent(context, com.example.swasthya.MedicineReminderReceiver::class.java)
+                        val pendingIntent = android.app.PendingIntent.getBroadcast(
+                            context,
+                            med.timeInMillis.hashCode(),
+                            intent,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                        )
                         
-                        foods.forEach { food ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 8.dp)
-                                    .clickable { selectedFoodForPopup = food },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    if (food.photoUri != null) {
-                                        Icon(Icons.Default.Search, contentDescription = "Photo attached", tint = MaterialTheme.colorScheme.primary)
-                                        Spacer(modifier = Modifier.width(16.dp))
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(food.description.ifBlank { "Logged Meal" }, fontWeight = FontWeight.Bold)
-                                        Text("Logged: ${SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date(food.timestamp))}", fontSize = 12.sp)
-                                    }
-                                }
+                        if (updatedMed.isTaken) {
+                            alarmManager.cancel(pendingIntent)
+                            android.widget.Toast.makeText(context, "Reminder turned off", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            intent.putExtra("MEDICINE_NAME", updatedMed.name ?: "Your Medicine")
+                            intent.putExtra("REMINDER_TYPE", updatedMed.reminderType)
+                            intent.putExtra("IS_MEAL", updatedMed.reminderType.contains("MEAL"))
+                            val newIntent = android.app.PendingIntent.getBroadcast(context, med.timeInMillis.hashCode(), intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+                            try {
+                                alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, updatedMed.timeInMillis, newIntent)
+                                android.widget.Toast.makeText(context, "Reminder turned on", android.widget.Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                alarmManager.set(android.app.AlarmManager.RTC_WAKEUP, updatedMed.timeInMillis, newIntent)
                             }
                         }
-                        if (foods.isEmpty()) {
-                            Text("No meals logged yet.", color = Color.Gray, modifier = Modifier.align(Alignment.CenterHorizontally))
-                        }
-                    }
+                    })
                 }
             }
         }
@@ -1094,55 +1920,21 @@ fun RecordsScreen(
         )
     }
 
-    if (selectedFoodForPopup != null) {
-        AlertDialog(
-            onDismissRequest = { selectedFoodForPopup = null },
-            title = { Text(selectedFoodForPopup!!.description.ifBlank { "Logged Meal" }) },
-            text = {
-                Column {
-                    if (selectedFoodForPopup!!.photoUri != null) {
-                        coil.compose.AsyncImage(
-                            model = selectedFoodForPopup!!.photoUri,
-                            contentDescription = "Food Image",
-                            modifier = Modifier.fillMaxWidth().height(250.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                    if (selectedFoodForPopup!!.aiAnalysis != null) {
-                        Text(
-                            text = "AI Analysis:\n${selectedFoodForPopup!!.aiAnalysis}",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                    Text("Logged: ${SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date(selectedFoodForPopup!!.timestamp))}")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedFoodForPopup = null }) {
-                    Text("Close")
-                }
-            }
-        )
-    }
-
     if (showAddMedicineDialog) {
         var newMedName by remember { mutableStateOf("") }
         var newMedDosage by remember { mutableStateOf("") }
         var newMedSchedule by remember { mutableStateOf("") }
         var newMedExplanation by remember { mutableStateOf("") }
         var isUploading by remember { mutableStateOf(false) }
-        val coroutineScope = rememberCoroutineScope()
         
         var newMedPhotoUri by remember { mutableStateOf<String?>(null) }
-        var newMedTimeInMillis by remember { mutableStateOf(Calendar.getInstance().timeInMillis) }
+        var newMedTimeInMillis by remember { mutableStateOf(java.util.Calendar.getInstance().timeInMillis) }
         var newMedTimeLabel by remember { mutableStateOf("08:00 AM") }
         var isAlarm by remember { mutableStateOf(false) }
         var isMealReminder by remember { mutableStateOf(false) }
 
-        val photoFile = remember { File(context.filesDir, "Med_${System.currentTimeMillis()}.jpg") }
-        val photoUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile) }
+        val photoFile = remember { java.io.File(context.filesDir, "Med_${System.currentTimeMillis()}.jpg") }
+        val photoUri = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photoFile) }
         val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
             if (success) {
                 newMedPhotoUri = photoFile.absolutePath
@@ -1150,23 +1942,22 @@ fun RecordsScreen(
         }
         
         val timePickerDialog = remember {
-            TimePickerDialog(
+            android.app.TimePickerDialog(
                 context,
                 { _, hourOfDay, minute ->
-                    val now = Calendar.getInstance()
-                    val cal = Calendar.getInstance()
-                    cal.set(Calendar.HOUR_OF_DAY, hourOfDay)
-                    cal.set(Calendar.MINUTE, minute)
-                    cal.set(Calendar.SECOND, 0)
-                    cal.set(Calendar.MILLISECOND, 0)
+                    val now = java.util.Calendar.getInstance()
+                    val cal = java.util.Calendar.getInstance()
+                    cal.set(java.util.Calendar.HOUR_OF_DAY, hourOfDay)
+                    cal.set(java.util.Calendar.MINUTE, minute)
+                    cal.set(java.util.Calendar.SECOND, 0)
+                    cal.set(java.util.Calendar.MILLISECOND, 0)
                     
-                    // If time is in the past (strictly earlier hour or earlier minute), schedule for tomorrow
-                    if (hourOfDay < now.get(Calendar.HOUR_OF_DAY) || 
-                        (hourOfDay == now.get(Calendar.HOUR_OF_DAY) && minute < now.get(Calendar.MINUTE))) {
-                        cal.add(Calendar.DAY_OF_YEAR, 1)
+                    if (hourOfDay < now.get(java.util.Calendar.HOUR_OF_DAY) || 
+                        (hourOfDay == now.get(java.util.Calendar.HOUR_OF_DAY) && minute < now.get(java.util.Calendar.MINUTE))) {
+                        cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
                     }
                     newMedTimeInMillis = cal.timeInMillis
-                    newMedTimeLabel = SimpleDateFormat("hh:mm a", Locale.US).format(cal.time)
+                    newMedTimeLabel = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(cal.time)
                 },
                 8, 0, false
             )
@@ -1255,17 +2046,17 @@ fun RecordsScreen(
                             )
                             onAddMedicine(med)
                             
-                            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                            val intent = Intent(context, MedicineReminderReceiver::class.java).apply {
+                            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                            val intent = android.content.Intent(context, com.example.swasthya.MedicineReminderReceiver::class.java).apply {
                                 putExtra("MEDICINE_NAME", med.name ?: "Your Medicine")
                                 putExtra("REMINDER_TYPE", med.reminderType)
                                 putExtra("IS_MEAL", med.reminderType.contains("MEAL"))
                             }
-                            val pendingIntent = PendingIntent.getBroadcast(
+                            val pendingIntent = android.app.PendingIntent.getBroadcast(
                                 context,
                                 med.timeInMillis.hashCode(),
                                 intent,
-                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
                             )
 
                             val diffInMillis = med.timeInMillis - System.currentTimeMillis()
@@ -1281,21 +2072,20 @@ fun RecordsScreen(
 
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                 if (alarmManager.canScheduleExactAlarms()) {
-                                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, med.timeInMillis, pendingIntent)
+                                    alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, med.timeInMillis, pendingIntent)
                                     android.widget.Toast.makeText(context, timeRemainingMsg, android.widget.Toast.LENGTH_LONG).show()
                                 } else {
-                                    alarmManager.set(AlarmManager.RTC_WAKEUP, med.timeInMillis, pendingIntent)
+                                    alarmManager.set(android.app.AlarmManager.RTC_WAKEUP, med.timeInMillis, pendingIntent)
                                     android.widget.Toast.makeText(context, "Please grant Exact Alarms permission for precise timing!", android.widget.Toast.LENGTH_LONG).show()
                                     try {
-                                        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
                                     } catch (e: Exception) {}
                                 }
                             } else {
-                                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, med.timeInMillis, pendingIntent)
+                                alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, med.timeInMillis, pendingIntent)
                                 android.widget.Toast.makeText(context, timeRemainingMsg, android.widget.Toast.LENGTH_LONG).show()
                             }
                             
-                            expandedSection = "Medicines"
                             isUploading = false
                             showAddMedicineDialog = false
                             android.widget.Toast.makeText(context, "Medicine Saved!", android.widget.Toast.LENGTH_SHORT).show()
@@ -1324,11 +2114,11 @@ fun RecordsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                        val intent = Intent(context, MedicineReminderReceiver::class.java)
+                        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                        val intent = android.content.Intent(context, com.example.swasthya.MedicineReminderReceiver::class.java)
                         selectedMedicinesForDeletion.forEach { med ->
                             onDeleteMedicine(med)
-                            val pendingIntent = PendingIntent.getBroadcast(context, med.timeInMillis.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                            val pendingIntent = android.app.PendingIntent.getBroadcast(context, med.timeInMillis.hashCode(), intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
                             alarmManager.cancel(pendingIntent)
                         }
                         selectedMedicinesForDeletion.clear()
@@ -1345,86 +2135,7 @@ fun RecordsScreen(
             }
         )
     }
-    
-    if (showAddFoodDialog) {
-        val coroutineScope = rememberCoroutineScope()
-        var foodDesc by remember { mutableStateOf("") }
-        var foodPhotoUri by remember { mutableStateOf<String?>(null) }
-        var isUploadingFood by remember { mutableStateOf(false) }
-        val foodPhotoFile = remember { File(context.filesDir, "Food_${System.currentTimeMillis()}.jpg") }
-        val foodPhotoUriToPass = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", foodPhotoFile) }
-        val foodCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-            if (success) {
-                foodPhotoUri = foodPhotoFile.absolutePath
-            }
-        }
-        
-        AlertDialog(
-            onDismissRequest = { showAddFoodDialog = false },
-            title = { Text("Log Food") },
-            text = {
-                Column {
-                    Text("Take a photo and describe the ingredients for AI calorie estimation.")
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { foodCameraLauncher.launch(foodPhotoUriToPass) }, 
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (foodPhotoUri == null) "Take Photo (Required)" else "Photo Captured!")
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    androidx.compose.material3.OutlinedTextField(
-                        value = foodDesc,
-                        onValueChange = { foodDesc = it },
-                        label = { Text("What's in this? (e.g. 2 eggs, toast)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isUploadingFood = true
-                        coroutineScope.launch {
-                            var cloudUrl: String? = null
-                            var aiAnalysis: String? = null
-                            var calories: Int? = null
-                            if (foodPhotoUri != null) {
-                                cloudUrl = uploadFileToCloudinary(foodPhotoUri!!)
-                                try {
-                                    val bitmap = android.graphics.BitmapFactory.decodeFile(foodPhotoUri!!)
-                                    val analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
-                                    aiAnalysis = analysis.summary
-                                    calories = analysis.calories
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
-                            onAddFood(FoodEntity(description = foodDesc, photoUri = foodPhotoUri, cloudUrl = cloudUrl, aiAnalysis = aiAnalysis, calories = calories))
-                            isUploadingFood = false
-                            showAddFoodDialog = false
-                        }
-                    },
-                    enabled = !isUploadingFood
-                ) {
-                    if (isUploadingFood) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Uploading...")
-                    } else {
-                        Text("Save")
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddFoodDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-    
+
     if (showPharmaLensDialog && pharmaLensAnalysis != null) {
         PharmaLensResultDialog(
             analysis = pharmaLensAnalysis!!,
@@ -1437,7 +2148,7 @@ fun RecordsScreen(
                     dosage = pharmaLensAnalysis!!.dosage,
                     schedule = "$timesPerDay times a day",
                     explanation = pharmaLensAnalysis!!.use,
-                    timeInMillis = cal.timeInMillis,
+timeInMillis = cal.timeInMillis,
                     timeLabel = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(cal.time),
                     reminderType = "Medicine",
                     hasImage = false
@@ -1448,165 +2159,760 @@ fun RecordsScreen(
 }
 
 @Composable
-fun ProfileScreen(user: UserEntity? = null, onUpdateUser: (UserEntity) -> Unit = {}, onEditProfile: () -> Unit = {}, onSignOut: () -> Unit = {}) {
+fun ProfileNavigationRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconColor: Color,
+    title: String,
+    titleColor: Color = Color.Unspecified,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(iconColor.copy(alpha = 0.1f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(18.dp))
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = title,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = titleColor,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun ProfileDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color.Gray, fontSize = 14.sp)
+        Text(value, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SosSettingsDialog(
+    user: UserEntity?,
+    onUpdateUser: (UserEntity) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var contactPreference by remember { mutableStateOf(user?.sosContactPreference ?: "Ask") }
+    var actionPreference by remember { mutableStateOf(user?.sosActionPreference ?: "Ask") }
+    var customMsg by remember { mutableStateOf(user?.customSosMessage ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "SOS Emergency Settings",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "Who to Contact:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { contactPreference = "Ask" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = contactPreference == "Ask",
+                                    onClick = { contactPreference = "Ask" }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Ask Me Every Time", fontSize = 14.sp)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { contactPreference = "112" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = contactPreference == "112" || contactPreference == "911",
+                                    onClick = { contactPreference = "112" }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Emergency Services (112)", fontSize = 14.sp)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { contactPreference = "Custom" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = contactPreference == "Custom",
+                                    onClick = { contactPreference = "Custom" }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Custom Emergency Contact", fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    Text(
+                        text = "Default Action:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { actionPreference = "Ask" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = actionPreference == "Ask",
+                                    onClick = { actionPreference = "Ask" }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Ask Me (Show Dialog)", fontSize = 14.sp)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { actionPreference = "Call" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = actionPreference == "Call",
+                                    onClick = { actionPreference = "Call" }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Direct Phone Call", fontSize = 14.sp)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { actionPreference = "Text" }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = actionPreference == "Text",
+                                    onClick = { actionPreference = "Text" }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Send SOS Text (SMS)", fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    Text(
+                        text = "Custom SMS Message:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = customMsg,
+                        onValueChange = { customMsg = it },
+                        modifier = Modifier.fillMaxWidth().height(90.dp),
+                        placeholder = { Text("Leave blank to include medical conditions & blood group...") },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    user?.let {
+                        onUpdateUser(it.copy(
+                            sosContactPreference = if (contactPreference == "911") "112" else contactPreference,
+                            sosActionPreference = actionPreference,
+                            customSosMessage = customMsg
+                        ))
+                    }
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color.Gray)
+            }
+        }
+    )
+}
+
+@Composable
+fun AppSettingsDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("App Settings", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("App Version", color = Color.Gray)
+                    Text("1.0.0 (Med Assist)", fontWeight = FontWeight.Bold)
+                }
+                HorizontalDivider()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Sync Engine", color = Color.Gray)
+                    Text("Firestore & Cloudinary", fontWeight = FontWeight.Bold)
+                }
+                HorizontalDivider()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Health Connect", color = Color.Gray)
+                    Text("Active", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                }
+                HorizontalDivider()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Helpline Location", color = Color.Gray)
+                    Text("India (112)", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text("Done")
+            }
+        }
+    )
+}
+
+@Composable
+fun HelpSupportDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Help & Support", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Text("We are here to help you!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 16.sp)
+                Text("If you encounter any issues or have questions regarding medical logs, report scanning, or SOS services, please reach out to us:")
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("support@medassist.in", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("1800-112-4567 (Toll-Free)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text("Done")
+            }
+        }
+    )
+}
+
+@Composable
+fun ProfileScreen(
+    user: UserEntity? = null,
+    onUpdateUser: (UserEntity) -> Unit = {},
+    onEditProfile: () -> Unit = {},
+    onSignOut: () -> Unit = {},
+    physicians: List<com.example.swasthya.data.PhysicianEntity> = emptyList(),
+    onAddPhysician: (com.example.swasthya.data.PhysicianEntity) -> Unit = {},
+    onDeletePhysician: (com.example.swasthya.data.PhysicianEntity) -> Unit = {}
+) {
+    var expandedPersonalInfo by remember { mutableStateOf(false) }
     val name = user?.name?.takeIf { it.isNotBlank() } ?: "John Doe"
     val age = user?.age?.takeIf { it.isNotBlank() } ?: "N/A"
     val email = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email ?: "johndoe@example.com"
     
-    Column(
+    val context = LocalContext.current
+    
+    var showSosDialog by remember { mutableStateOf(false) }
+    var showAppSettingsDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
+    var showAddPhysicianDialog by remember { mutableStateOf(false) }
+    var selectedPhysicianForDelete by remember { mutableStateOf<com.example.swasthya.data.PhysicianEntity?>(null) }
+
+    if (showSosDialog) {
+        SosSettingsDialog(
+            user = user,
+            onUpdateUser = onUpdateUser,
+            onDismiss = { showSosDialog = false }
+        )
+    }
+
+    if (showAppSettingsDialog) {
+        AppSettingsDialog(
+            onDismiss = { showAppSettingsDialog = false }
+        )
+    }
+
+    if (showHelpDialog) {
+        HelpSupportDialog(
+            onDismiss = { showHelpDialog = false }
+        )
+    }
+
+    if (showAddPhysicianDialog) {
+        var docName by remember { mutableStateOf("") }
+        var docHospital by remember { mutableStateOf("") }
+        var docPhone by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddPhysicianDialog = false },
+            title = { Text("Add Physician", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = docName,
+                        onValueChange = { docName = it },
+                        label = { Text("Physician Name (e.g. Dr. Sarah)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedTextField(
+                        value = docHospital,
+                        onValueChange = { docHospital = it },
+                        label = { Text("Hospital / Clinic") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedTextField(
+                        value = docPhone,
+                        onValueChange = { docPhone = it },
+                        label = { Text("Phone Number") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (docName.isNotBlank() && docPhone.isNotBlank()) {
+                            onAddPhysician(
+                                com.example.swasthya.data.PhysicianEntity(
+                                    name = docName,
+                                    hospital = docHospital,
+                                    phone = docPhone
+                                )
+                            )
+                            showAddPhysicianDialog = false
+                        }
+                    },
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddPhysicianDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    if (selectedPhysicianForDelete != null) {
+        val physician = selectedPhysicianForDelete!!
+        AlertDialog(
+            onDismissRequest = { selectedPhysicianForDelete = null },
+            title = { Text("Delete Physician?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error) },
+            text = { Text("Are you sure you want to remove ${physician.name} from your care team?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeletePhysician(physician)
+                        selectedPhysicianForDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedPhysicianForDelete = null }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        Icon(
-            imageVector = Icons.Default.AccountCircle,
-            contentDescription = "Profile Pic",
-            modifier = Modifier.size(100.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(name, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text(email, fontSize = 16.sp, color = Color.Gray)
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onEditProfile, modifier = Modifier.fillMaxWidth(0.6f)) {
-            Text("Edit Profile")
+        IconButton(
+            onClick = { showAppSettingsDialog = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "App Settings",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
         }
-        Spacer(modifier = Modifier.height(24.dp))
 
-        // Personal Information
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Personal Information", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Age:")
-                    Text(age, fontWeight = FontWeight.Bold)
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Blood Group:")
-                    Text(user?.bloodGroup?.takeIf { it.isNotBlank() } ?: "Not specified", fontWeight = FontWeight.Bold)
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Weight / Height:")
-                    val w = user?.weight?.takeIf { it.isNotBlank() } ?: "-"
-                    val h = user?.height?.takeIf { it.isNotBlank() } ?: "-"
-                    Text("$w kg / $h cm", fontWeight = FontWeight.Bold)
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Phone:")
-                    Text(user?.phone?.takeIf { it.isNotBlank() } ?: "Not specified", fontWeight = FontWeight.Bold)
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Medical Conditions:")
-                    Text(user?.disease?.takeIf { it.isNotBlank() } ?: "None", fontWeight = FontWeight.Bold)
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Goals:")
-                    Text(user?.expectedGoals?.takeIf { it.isNotBlank() } ?: "None set", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // My Doctors Section
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("My Care Team (Physicians)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Person, contentDescription = "Doc", tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text("Dr. Sarah Jenkins", fontWeight = FontWeight.Bold)
-                        Text("City General Hospital", fontSize = 14.sp)
-                        Text("+1-555-0198", fontSize = 14.sp, color = Color.Gray)
-                    }
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                Button(onClick = { /* Add doc */ }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Add Physician")
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        // SOS Settings Section
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("SOS / Emergency Settings", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.error)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text("Who to Contact:", fontWeight = FontWeight.SemiBold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = user?.sosContactPreference == "Ask",
-                        onClick = { user?.let { onUpdateUser(it.copy(sosContactPreference = "Ask")) } }
-                    )
-                    Text("Ask Me")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    RadioButton(
-                        selected = user?.sosContactPreference == "911",
-                        onClick = { user?.let { onUpdateUser(it.copy(sosContactPreference = "911")) } }
-                    )
-                    Text("Emergency Services (911)")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    RadioButton(
-                        selected = user?.sosContactPreference == "Custom",
-                        onClick = { user?.let { onUpdateUser(it.copy(sosContactPreference = "Custom")) } }
-                    )
-                    Text("Custom Contact")
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Default Action:", fontWeight = FontWeight.SemiBold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = user?.sosActionPreference == "Ask",
-                        onClick = { user?.let { onUpdateUser(it.copy(sosActionPreference = "Ask")) } }
-                    )
-                    Text("Ask Me")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    RadioButton(
-                        selected = user?.sosActionPreference == "Call",
-                        onClick = { user?.let { onUpdateUser(it.copy(sosActionPreference = "Call")) } }
-                    )
-                    Text("Call")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    RadioButton(
-                        selected = user?.sosActionPreference == "Text",
-                        onClick = { user?.let { onUpdateUser(it.copy(sosActionPreference = "Text")) } }
-                    )
-                    Text("Text (SMS)")
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Custom SMS Message:", fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = user?.customSosMessage ?: "",
-                    onValueChange = { newText -> user?.let { onUpdateUser(it.copy(customSosMessage = newText)) } },
-                    modifier = Modifier.fillMaxWidth().height(100.dp),
-                    placeholder = { Text("Leave blank to use default medical SOS message...") }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                    .border(2.dp, Color.White, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier.size(52.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(name, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(email, fontSize = 14.sp, color = Color.Gray)
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            OutlinedButton(
+                onClick = onEditProfile,
+                modifier = Modifier.fillMaxWidth(0.55f),
+                shape = RoundedCornerShape(24.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Edit Profile", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+            
+            Spacer(modifier = Modifier.height(28.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "My Care Team (Physicians)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    if (physicians.isEmpty()) {
+                        Text(
+                            text = "No physicians added yet. Tap below to add your care team.",
+                            color = Color.Gray,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        Column {
+                            physicians.forEachIndexed { index, physician ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pointerInput(physician.id) {
+                                            detectTapGestures(
+                                                onLongPress = { selectedPhysicianForDelete = physician },
+                                                onTap = {
+                                                    try {
+                                                        val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${physician.phone}"))
+                                                        context.startActivity(intent)
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("ProfileScreen", "Error dial intent", e)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = "Physician Profile",
+                                            modifier = Modifier.size(24.dp),
+                                            tint = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(physician.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        if (physician.hospital.isNotBlank()) {
+                                            Text(physician.hospital, fontSize = 13.sp, color = Color.Gray)
+                                        }
+                                        Text(physician.phone, fontSize = 13.sp, color = Color.Gray)
+                                    }
+                                    
+                                    IconButton(
+                                        onClick = {
+                                            try {
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${physician.phone}"))
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("ProfileScreen", "Error dial intent", e)
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(MaterialTheme.colorScheme.surface, CircleShape)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Call,
+                                            contentDescription = "Call Physician",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                
+                                if (index < physicians.size - 1) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    OutlinedButton(
+                        onClick = { showAddPhysicianDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Add Physician", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { expandedPersonalInfo = !expandedPersonalInfo }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Personal Information",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                imageVector = if (expandedPersonalInfo) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        
+                        androidx.compose.animation.AnimatedVisibility(visible = expandedPersonalInfo) {
+                            Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                                HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+                                
+                                ProfileDetailRow("Age", age)
+                                ProfileDetailRow("Blood Group", user?.bloodGroup?.takeIf { it.isNotBlank() } ?: "Not specified")
+                                ProfileDetailRow("Weight / Height", "${user?.weight?.takeIf { it.isNotBlank() } ?: "-"} kg / ${user?.height?.takeIf { it.isNotBlank() } ?: "-"} cm")
+                                ProfileDetailRow("Phone", user?.phone?.takeIf { it.isNotBlank() } ?: "Not specified")
+                                ProfileDetailRow("Medical Conditions", user?.disease?.takeIf { it.isNotBlank() } ?: "None")
+                                ProfileDetailRow("Goals", user?.expectedGoals?.takeIf { it.isNotBlank() } ?: "None set")
+                            }
+                        }
+                    }
+                }
+
+                ProfileNavigationRow(
+                    icon = Icons.Default.Warning,
+                    iconColor = MaterialTheme.colorScheme.error,
+                    title = "SOS / Emergency Settings",
+                    titleColor = MaterialTheme.colorScheme.error,
+                    onClick = { showSosDialog = true }
+                )
+
+                ProfileNavigationRow(
+                    icon = Icons.Default.Settings,
+                    iconColor = Color(0xFF673AB7),
+                    title = "App Settings",
+                    onClick = { showAppSettingsDialog = true }
+                )
+
+                ProfileNavigationRow(
+                    icon = Icons.Default.Info,
+                    iconColor = Color(0xFF009688),
+                    title = "Help & Support",
+                    onClick = { showHelpDialog = true }
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            TextButton(
+                onClick = onSignOut,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Sign Out",
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(24.dp))
         }
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        TextButton(onClick = onSignOut) {
-            Text("Sign Out", color = Color.Red)
-        }
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
@@ -1858,3 +3164,6 @@ fun PharmaLensResultDialog(
         }
     )
 }
+
+
+

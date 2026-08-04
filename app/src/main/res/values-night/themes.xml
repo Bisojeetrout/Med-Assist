@@ -1,5 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Swasthya" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@color/purple_700</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">#FFFFFF</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@android:color/transparent</item>
     </style>
 </resources>

@@ -16,7 +16,13 @@ import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
+import android.util.Base64
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.io.OutputStreamWriter
 
 data class FoodAnalysis(val summary: String, val calories: Int)
 
@@ -35,6 +41,113 @@ object GeminiHelper {
         apiKey = BuildConfig.GEMINI_API_KEY
     )
 
+    private fun isFallbackEligible(e: Throwable): Boolean {
+        val msg = e.message ?: ""
+        if (e is java.io.IOException || 
+            e is java.net.SocketTimeoutException ||
+            e is java.net.UnknownHostException) {
+            return true
+        }
+        if (msg.contains("429") || 
+            msg.contains("RESOURCE_EXHAUSTED") || 
+            msg.contains("quota") || 
+            msg.contains("limit") || 
+            msg.contains("503") || 
+            msg.contains("overloaded") || 
+            msg.contains("timeout") ||
+            msg.contains("unavailable")) {
+            return true
+        }
+        if (e.javaClass.name.contains("ServerException")) {
+            return true
+        }
+        return false
+    }
+
+    private fun bitmapToBase64(bitmap: Bitmap): String {
+        val byteArrayOutputStream = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, byteArrayOutputStream)
+        val byteArray = byteArrayOutputStream.toByteArray()
+        return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+    }
+
+    private suspend fun callOpenRouter(
+        systemInstruction: String?,
+        userPrompt: String,
+        base64Image: String? = null
+    ): String {
+        return withContext(Dispatchers.IO) {
+            val url = java.net.URL("https://openrouter.ai/api/v1/chat/completions")
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Authorization", "Bearer ${BuildConfig.OPENROUTER_API_KEY}")
+            connection.setRequestProperty("HTTP-Referer", "https://github.com/google/gemini")
+            connection.setRequestProperty("X-Title", "Med Assist")
+            connection.doOutput = true
+            connection.connectTimeout = 30000
+            connection.readTimeout = 30000
+
+            val messagesArray = org.json.JSONArray()
+            
+            if (!systemInstruction.isNullOrBlank()) {
+                val sysObj = org.json.JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemInstruction)
+                }
+                messagesArray.put(sysObj)
+            }
+
+            val userContent = if (base64Image == null) {
+                userPrompt
+            } else {
+                val contentArr = org.json.JSONArray()
+                contentArr.put(org.json.JSONObject().apply {
+                    put("type", "text")
+                    put("text", userPrompt)
+                })
+                contentArr.put(org.json.JSONObject().apply {
+                    put("type", "image_url")
+                    put("image_url", org.json.JSONObject().apply {
+                        put("url", "data:image/jpeg;base64,$base64Image")
+                    })
+                })
+                contentArr
+            }
+
+            val userObj = org.json.JSONObject().apply {
+                put("role", "user")
+                put("content", userContent)
+            }
+            messagesArray.put(userObj)
+
+            val payload = org.json.JSONObject().apply {
+                put("model", "openrouter/free")
+                put("messages", messagesArray)
+            }
+
+            val writer = java.io.OutputStreamWriter(connection.outputStream)
+            writer.write(payload.toString())
+            writer.flush()
+            writer.close()
+
+            val responseCode = connection.responseCode
+            if (responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val responseJson = org.json.JSONObject(response)
+                val choices = responseJson.getJSONArray("choices")
+                if (choices.length() > 0) {
+                    val message = choices.getJSONObject(0).getJSONObject("message")
+                    return@withContext message.getString("content")
+                }
+                throw Exception("Empty choices from OpenRouter")
+            } else {
+                val errorStream = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                throw Exception("OpenRouter API returned error $responseCode: $errorStream")
+            }
+        }
+    }
+
     suspend fun analyzeFood(bitmap: Bitmap?, description: String): FoodAnalysis {
         return withContext(Dispatchers.IO) {
             try {
@@ -49,22 +162,39 @@ object GeminiHelper {
                     }
                 """.trimIndent()
 
-                val inputContent = content {
-                    if (bitmap != null) {
-                        image(bitmap)
+                val responseText = try {
+                    val inputContent = content {
+                        if (bitmap != null) {
+                            image(bitmap)
+                        }
+                        text(prompt)
                     }
-                    text(prompt)
+                    val response = generativeModel.generateContent(inputContent)
+                    android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
+                    response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                } catch (e: Exception) {
+                    if (isFallbackEligible(e)) {
+                        android.util.Log.w("GeminiHelper", "Gemini failed, falling back to OpenRouter", e)
+                        val base64Image = bitmap?.let { bitmapToBase64(it) }
+                        val openRouterResponse = callOpenRouter(
+                            systemInstruction = null,
+                            userPrompt = prompt,
+                            base64Image = base64Image
+                        )
+                        android.util.Log.d("GeminiHelper", "AI_PROVIDER = OPENROUTER_FALLBACK")
+                        openRouterResponse.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                    } else {
+                        throw e
+                    }
                 }
 
-                val response = generativeModel.generateContent(inputContent)
-                val responseText = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
                 val json = JSONObject(responseText)
                 val summary = json.optString("summary", "Could not analyze the food.")
                 val calories = json.optInt("calories", 0)
                 FoodAnalysis(summary, calories)
             } catch (e: Exception) {
                 e.printStackTrace()
-                FoodAnalysis("Analysis failed: ${e.message}", 0)
+                FoodAnalysis("AI service is temporarily unavailable. Please try again shortly.", 0)
             }
         }
     }
@@ -87,11 +217,28 @@ object GeminiHelper {
                     If they haven't logged meals, gently remind them. Also, if there's anything notable in their recent reports or medications they should take, briefly mention it. Keep it very concise and friendly. No markdown formatting.
                 """.trimIndent()
                 
-                val response = generativeModel.generateContent(prompt)
-                response.text?.trim() ?: "Could not generate summary."
+                val responseText = try {
+                    val response = generativeModel.generateContent(prompt)
+                    android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
+                    response.text?.trim() ?: "Could not generate summary."
+                } catch (e: Exception) {
+                    if (isFallbackEligible(e)) {
+                        android.util.Log.w("GeminiHelper", "Gemini failed, falling back to OpenRouter", e)
+                        val openRouterResponse = callOpenRouter(
+                            systemInstruction = null,
+                            userPrompt = prompt,
+                            base64Image = null
+                        )
+                        android.util.Log.d("GeminiHelper", "AI_PROVIDER = OPENROUTER_FALLBACK")
+                        openRouterResponse.trim()
+                    } else {
+                        throw e
+                    }
+                }
+                responseText
             } catch (e: Exception) {
                 e.printStackTrace()
-                "Summary unavailable: ${e.message}"
+                "AI service is temporarily unavailable. Please try again shortly."
             }
         }
     }
@@ -127,16 +274,33 @@ object GeminiHelper {
                     Keep the summary concise and strictly based on the information provided in the report.
                 """.trimIndent()
 
-                val inputContent = content {
-                    image(bitmap)
-                    text(prompt)
+                val responseText = try {
+                    val inputContent = content {
+                        image(bitmap)
+                        text(prompt)
+                    }
+                    val response = generativeModel.generateContent(inputContent)
+                    android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
+                    response.text?.trim()
+                } catch (e: Exception) {
+                    if (isFallbackEligible(e)) {
+                        android.util.Log.w("GeminiHelper", "Gemini failed, falling back to OpenRouter", e)
+                        val base64Image = bitmapToBase64(bitmap)
+                        val openRouterResponse = callOpenRouter(
+                            systemInstruction = null,
+                            userPrompt = prompt,
+                            base64Image = base64Image
+                        )
+                        android.util.Log.d("GeminiHelper", "AI_PROVIDER = OPENROUTER_FALLBACK")
+                        openRouterResponse.trim()
+                    } else {
+                        throw e
+                    }
                 }
-
-                val response = generativeModel.generateContent(inputContent)
-                response.text?.trim()
+                responseText
             } catch (e: Exception) {
                 e.printStackTrace()
-                null
+                "AI service is temporarily unavailable. Please try again shortly."
             }
         }
     }
@@ -159,15 +323,31 @@ object GeminiHelper {
                     }
                 """.trimIndent()
 
-                val inputContent = content {
-                    image(bitmap)
-                    text(prompt)
+                val responseText = try {
+                    val inputContent = content {
+                        image(bitmap)
+                        text(prompt)
+                    }
+                    val response = generativeModel.generateContent(inputContent)
+                    android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
+                    response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                } catch (e: Exception) {
+                    if (isFallbackEligible(e)) {
+                        android.util.Log.w("GeminiHelper", "Gemini failed, falling back to OpenRouter", e)
+                        val base64Image = bitmapToBase64(bitmap)
+                        val openRouterResponse = callOpenRouter(
+                            systemInstruction = null,
+                            userPrompt = prompt,
+                            base64Image = base64Image
+                        )
+                        android.util.Log.d("GeminiHelper", "AI_PROVIDER = OPENROUTER_FALLBACK")
+                        openRouterResponse.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                    } else {
+                        throw e
+                    }
                 }
 
-                val response = generativeModel.generateContent(inputContent)
-                val responseText = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
                 val json = JSONObject(responseText)
-                
                 MedicineAnalysis(
                     brand = json.optString("brand", "Unknown"),
                     genericName = json.optString("genericName", "Unknown"),
@@ -184,6 +364,72 @@ object GeminiHelper {
             }
         }
     }
+
+    suspend fun checkDrugInteractions(medicinesList: List<String>): DrugInteractionResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (medicinesList.size <= 1) {
+                    return@withContext DrugInteractionResult(
+                        hasInteraction = false,
+                        description = "No interactions possible with fewer than two medications.",
+                        interactedDrugs = emptyList()
+                    )
+                }
+
+                val medicinesJoined = medicinesList.joinToString(", ")
+                val prompt = """
+                    You are a clinical pharmacologist AI. Analyze the following list of medications for potential adverse drug-drug interactions:
+                    Medications: $medicinesJoined
+
+                    You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
+                    {
+                        "hasInteraction": true/false,
+                        "description": "A clear, clinical explanation of the interactions found, or a positive confirmation statement that no adverse interactions were found among these drugs.",
+                        "interactedDrugs": ["DrugName1", "DrugName2"]
+                    }
+                """.trimIndent()
+
+                val responseText = try {
+                    val response = generativeModel.generateContent(prompt)
+                    android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
+                    response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                } catch (e: Exception) {
+                    if (isFallbackEligible(e)) {
+                        android.util.Log.w("GeminiHelper", "Gemini failed, falling back to OpenRouter", e)
+                        val openRouterResponse = callOpenRouter(
+                            systemInstruction = null,
+                            userPrompt = prompt,
+                            base64Image = null
+                        )
+                        android.util.Log.d("GeminiHelper", "AI_PROVIDER = OPENROUTER_FALLBACK")
+                        openRouterResponse.replace("```json", "")?.replace("```", "")?.trim() ?: "{}"
+                    } else {
+                        throw e
+                    }
+                }
+
+                val json = JSONObject(responseText)
+                val hasInteraction = json.optBoolean("hasInteraction", false)
+                val description = json.optString("description", "No adverse interactions found.")
+                val interactedDrugsJson = json.optJSONArray("interactedDrugs")
+                val interactedDrugs = mutableListOf<String>()
+                if (interactedDrugsJson != null) {
+                    for (i in 0 until interactedDrugsJson.length()) {
+                        interactedDrugs.add(interactedDrugsJson.getString(i))
+                    }
+                }
+
+                DrugInteractionResult(hasInteraction, description, interactedDrugs)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                DrugInteractionResult(
+                    hasInteraction = false,
+                    description = "AI service is temporarily unavailable. Please try again shortly.",
+                    interactedDrugs = emptyList()
+                )
+            }
+        }
+    }
 }
 
 data class MedicineAnalysis(
@@ -195,4 +441,10 @@ data class MedicineAnalysis(
     val sideEffects: String,
     val interactions: String,
     val isGenuine: String
+)
+
+data class DrugInteractionResult(
+    val hasInteraction: Boolean,
+    val description: String,
+    val interactedDrugs: List<String>
 )

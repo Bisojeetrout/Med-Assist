@@ -3,7 +3,7 @@ Med Assist is a comprehensive, AI-powered health tracking and medical assistance
 
 🌟 Key Features
 AI Health Insights (Powered by Google Gemini): Automatically generates summaries for uploaded medical reports and analyzes your recent vitals, diet, and sleep to offer concise, personalized health advice.
-SOS Emergency Alert: A fully customizable, one-tap emergency button that can instantly text or dial your emergency contact (or 911) and share a distress message featuring your blood group and medical conditions.
+SOS Emergency Alert: A fully customizable, one-tap emergency button that can instantly text or dial your emergency contact (or 112) and share a distress message featuring your blood group and medical conditions.
 One-Tap Physician Sharing: Instantly generates and shares a comprehensive summary of your health data, including recent vitals, medications, and AI-summarized medical reports with your doctor via SMS, WhatsApp, or Email.
 Health Connect Integration: Securely aggregates and syncs daily step counts, heart rate, and calories burned directly from the Android Health Connect API.
 Cloud Medical Records: Upload medical documents securely. Files are hosted on Cloudinary and synchronized seamlessly with Firebase Firestore.

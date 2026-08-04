@@ -45,6 +45,8 @@ fun ReportsScreen(
 ) {
     val context = LocalContext.current
     var selectedReportForPopup by remember { mutableStateOf<ReportEntity?>(null) }
+    var pendingReportFile by remember { mutableStateOf<File?>(null) }
+    var reportNameInput by remember { mutableStateOf("") }
     var isUploading by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -78,22 +80,8 @@ fun ReportsScreen(
                     inputStream?.close()
                     outputStream.close()
 
-                    isUploading = true
-                    coroutineScope.launch {
-                        val aiSummary = com.example.swasthya.GeminiHelper.analyzeMedicalReport(context, outFile.absolutePath)
-                        val cloudUrl = uploadFileToCloudinary(outFile.absolutePath)
-                        onAddReport(
-                            ReportEntity(
-                                fileName = fileName,
-                                localUri = outFile.absolutePath,
-                                cloudUrl = cloudUrl,
-                                reportSummary = aiSummary,
-                                uploadDate = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
-                            )
-                        )
-                        isUploading = false
-                        android.widget.Toast.makeText(context, "Report Uploaded Successfully!", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                    pendingReportFile = outFile
+                    reportNameInput = ""
                 } catch (e: Exception) {
                     Log.e("Scanner", "Error saving scanned file", e)
                 }
@@ -109,22 +97,8 @@ fun ReportsScreen(
                     inputStream?.close()
                     outputStream.close()
 
-                    isUploading = true
-                    coroutineScope.launch {
-                        val aiSummary = com.example.swasthya.GeminiHelper.analyzeMedicalReport(context, outFile.absolutePath)
-                        val cloudUrl = uploadFileToCloudinary(outFile.absolutePath)
-                        onAddReport(
-                            ReportEntity(
-                                fileName = fileName,
-                                localUri = outFile.absolutePath,
-                                cloudUrl = cloudUrl,
-                                reportSummary = aiSummary,
-                                uploadDate = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
-                            )
-                        )
-                        isUploading = false
-                        android.widget.Toast.makeText(context, "Report Uploaded Successfully!", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                    pendingReportFile = outFile
+                    reportNameInput = ""
                 } catch (e: Exception) {
                     Log.e("Scanner", "Error saving scanned file", e)
                 }
@@ -144,22 +118,8 @@ fun ReportsScreen(
                 inputStream?.copyTo(outputStream)
                 inputStream?.close()
                 outputStream.close()
-                isUploading = true
-                coroutineScope.launch {
-                    val aiSummary = com.example.swasthya.GeminiHelper.analyzeMedicalReport(context, outFile.absolutePath)
-                    val cloudUrl = uploadFileToCloudinary(outFile.absolutePath)
-                    onAddReport(
-                        ReportEntity(
-                            fileName = fileName,
-                            localUri = outFile.absolutePath,
-                            cloudUrl = cloudUrl,
-                            reportSummary = aiSummary,
-                            uploadDate = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
-                        )
-                    )
-                    isUploading = false
-                    android.widget.Toast.makeText(context, "Report Uploaded Successfully!", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                pendingReportFile = outFile
+                reportNameInput = ""
             } catch (e: Exception) {
                 Log.e("PDFPicker", "Error saving PDF file", e)
             }
@@ -300,6 +260,61 @@ if (selectedReportForPopup != null) {
                         Text("Close")
                     }
                 }
+            }
+        )
+    }
+
+    if (pendingReportFile != null) {
+        AlertDialog(
+            onDismissRequest = { pendingReportFile = null },
+            title = { Text("Name Your Report") },
+            text = {
+                Column {
+                    Text("What kind of report is this? (e.g. Blood Test, Prescription, X-Ray)")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = reportNameInput,
+                        onValueChange = { reportNameInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Report Name") }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val file = pendingReportFile!!
+                        val finalName = if (reportNameInput.isNotBlank()) reportNameInput else file.name
+                        isUploading = true
+                        pendingReportFile = null
+                        coroutineScope.launch {
+                            val aiSummary = try {
+                                com.example.swasthya.GeminiHelper.analyzeMedicalReport(context, file.absolutePath)
+                            } catch(e: Exception) { null }
+                            
+                            val cloudUrl = try {
+                                uploadFileToCloudinary(file.absolutePath)
+                            } catch(e: Exception) { null }
+                            
+                            onAddReport(
+                                ReportEntity(
+                                    fileName = finalName,
+                                    localUri = file.absolutePath,
+                                    cloudUrl = cloudUrl,
+                                    reportSummary = aiSummary,
+                                    uploadDate = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US).format(java.util.Date())
+                                )
+                            )
+                            isUploading = false
+                            android.widget.Toast.makeText(context, "Report Uploaded Successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingReportFile = null }) { Text("Cancel") }
             }
         )
     }

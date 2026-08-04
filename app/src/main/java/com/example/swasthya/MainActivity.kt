@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -16,12 +17,30 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.swasthya.data.SwasthyaDatabase
 import com.example.swasthya.data.FoodEntity
+import com.example.swasthya.data.PhysicianEntity
 import com.example.swasthya.ui.screens.AuthScreen
 import com.example.swasthya.ui.screens.DashboardScreen
 import com.example.swasthya.ui.screens.OnboardingScreen
 import com.example.swasthya.ui.theme.SwasthyaTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.firstOrNull
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.alpha
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,9 +79,20 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
     val medicines by dao.getAllMedicines().collectAsState(initial = emptyList())
     val reports by dao.getAllReports().collectAsState(initial = emptyList())
     val foods by dao.getAllFoods().collectAsState(initial = emptyList())
+    val physicians by dao.getAllPhysicians().collectAsState(initial = emptyList())
     val user by dao.getUser().collectAsState(initial = null)
 
-    NavHost(navController = navController, startDestination = "auth") {
+    NavHost(navController = navController, startDestination = "splash") {
+        composable("splash") {
+            SplashScreen(
+                dao = dao,
+                onNavigateNext = { destination ->
+                    navController.navigate(destination) {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                }
+            )
+        }
         composable("auth") {
             AuthScreen(
                 onNavigateToDashboard = {
@@ -133,6 +163,19 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                 },
                 vitals = vitals,
                 medicines = medicines,
+                physicians = physicians,
+                onAddPhysician = { physician ->
+                    coroutineScope.launch {
+                        dao.insertPhysician(physician)
+                        FirestoreSync.syncPhysician(user?.phone ?: "anonymous", physician)
+                    }
+                },
+                onDeletePhysician = { physician ->
+                    coroutineScope.launch {
+                        dao.deletePhysician(physician)
+                        FirestoreSync.deletePhysician(user?.phone ?: "anonymous", physician)
+                    }
+                },
                 onAddVitals = { vital ->
                     coroutineScope.launch {
                         dao.insertVitals(vital)
@@ -277,5 +320,57 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+    }
+}
+
+@Composable
+fun SplashScreen(
+    dao: com.example.swasthya.data.SwasthyaDao,
+    onNavigateNext: (String) -> Unit
+) {
+    var startAnimation by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (startAnimation) 1f else 0.85f,
+        animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
+        label = "scale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (startAnimation) 1f else 0f,
+        animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
+        label = "alpha"
+    )
+
+    LaunchedEffect(Unit) {
+        startAnimation = true
+        delay(3000) // Show for 3 seconds
+        
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            val userProfile = dao.getUser().firstOrNull()
+            if (userProfile?.isProfileComplete == true) {
+                onNavigateNext("dashboard")
+            } else {
+                onNavigateNext("onboarding")
+            }
+        } else {
+            onNavigateNext("auth")
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.medassist_logo_full),
+            contentDescription = "MedAssist Splash Logo",
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .scale(scale)
+                .alpha(alpha),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+        )
     }
 }

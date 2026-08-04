@@ -83,6 +83,14 @@ data class FoodEntity(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "physicians")
+data class PhysicianEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val hospital: String,
+    val phone: String
+)
+
 @Dao
 interface SwasthyaDao {
     @Query("SELECT * FROM users WHERE id = 1")
@@ -126,9 +134,18 @@ interface SwasthyaDao {
 
     @androidx.room.Delete
     suspend fun deleteFood(food: FoodEntity)
+
+    @Query("SELECT * FROM physicians ORDER BY id DESC")
+    fun getAllPhysicians(): Flow<List<PhysicianEntity>>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertPhysician(physician: PhysicianEntity)
+
+    @androidx.room.Delete
+    suspend fun deletePhysician(physician: PhysicianEntity)
 }
 
-@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class], version = 13, exportSchema = false)
+@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class], version = 14, exportSchema = false)
 abstract class SwasthyaDatabase : RoomDatabase() {
     abstract fun swasthyaDao(): SwasthyaDao
 
