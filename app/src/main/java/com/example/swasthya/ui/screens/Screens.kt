@@ -797,14 +797,23 @@ fun DashboardScreen(
                                     var analysis: com.example.swasthya.FoodAnalysis? = null
                                     if (foodScanPhotoUri != null) {
                                         cloudUrl = uploadFileToCloudinary(foodScanPhotoUri!!)
-                                        try {
-                                            val bitmap = android.graphics.BitmapFactory.decodeFile(foodScanPhotoUri!!)
-                                            analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodScanDesc)
-                                            aiAnalysis = "${analysis.calories} kcal, ${analysis.protein}g protein"
-                                            calories = analysis.calories
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
+                                    }
+                                    try {
+                                        val bitmap = foodScanPhotoUri?.let { android.graphics.BitmapFactory.decodeFile(it) }
+                                        analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodScanDesc)
+                                        if (analysis?.success == true) {
+                                            aiAnalysis = """
+                                                Dish: ${analysis?.dishName}
+                                                Weight: ${analysis?.weightGrams}g
+                                                Calories: ${analysis?.calories} kcal
+                                                Macros: ${analysis?.carbohydrates}g Carbs | ${analysis?.protein}g Protein | ${analysis?.fats}g Fat
+                                                Vitamins: ${analysis?.vitaminsAndMinerals}
+                                                Warnings: ${analysis?.deficiencyWarnings}
+                                            """.trimIndent()
+                                            calories = analysis?.calories
                                         }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
                                     }
                                     val newFood = FoodEntity(
                                         description = foodScanDesc,
@@ -826,7 +835,7 @@ fun DashboardScreen(
                                     selectedFoodForPopup = newFood
                                 }
                             },
-                            enabled = !isUploadingFoodScan && foodScanPhotoUri != null
+                            enabled = !isUploadingFoodScan
                         ) {
                             if (isUploadingFoodScan) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -1645,14 +1654,23 @@ fun FoodLogScreen(
                             var analysis: com.example.swasthya.FoodAnalysis? = null
                             if (foodPhotoUri != null) {
                                 cloudUrl = uploadFileToCloudinary(foodPhotoUri!!)
-                                try {
-                                    val bitmap = android.graphics.BitmapFactory.decodeFile(foodPhotoUri!!)
-                                    analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
-                                    aiAnalysis = "${analysis.calories} kcal, ${analysis.protein}g protein"
-                                    calories = analysis.calories
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
+                            }
+                            try {
+                                val bitmap = foodPhotoUri?.let { android.graphics.BitmapFactory.decodeFile(it) }
+                                analysis = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
+                                if (analysis?.success == true) {
+                                    aiAnalysis = """
+                                        Dish: ${analysis?.dishName}
+                                        Weight: ${analysis?.weightGrams}g
+                                        Calories: ${analysis?.calories} kcal
+                                        Macros: ${analysis?.carbohydrates}g Carbs | ${analysis?.protein}g Protein | ${analysis?.fats}g Fat
+                                        Vitamins: ${analysis?.vitaminsAndMinerals}
+                                        Warnings: ${analysis?.deficiencyWarnings}
+                                    """.trimIndent()
+                                    calories = analysis?.calories
                                 }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
                             }
                             onAddFood(FoodEntity(
                                 description = foodDesc,
@@ -2104,12 +2122,12 @@ fun CalorieTrackerSection(
                         coroutineScope.launch {
                             if (foodPhotoUri != null) {
                                 currentCloudUrl = uploadFileToCloudinary(foodPhotoUri!!)
-                                try {
-                                    val bitmap = android.graphics.BitmapFactory.decodeFile(foodPhotoUri!!)
-                                    currentAnalysisResult = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
+                            }
+                            try {
+                                val bitmap = foodPhotoUri?.let { android.graphics.BitmapFactory.decodeFile(it) }
+                                currentAnalysisResult = com.example.swasthya.GeminiHelper.analyzeFood(bitmap, foodDesc)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
                             }
                             isUploadingFood = false
                             showAddFoodDialog = false
@@ -2118,7 +2136,7 @@ fun CalorieTrackerSection(
                             }
                         }
                     },
-                    enabled = !isUploadingFood && foodPhotoUri != null
+                    enabled = !isUploadingFood
                 ) {
                     if (isUploadingFood) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
