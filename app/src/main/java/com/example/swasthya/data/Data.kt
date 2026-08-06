@@ -101,6 +101,79 @@ data class PhysicianEntity(
     val phone: String
 )
 
+@Entity(tableName = "indian_medicines")
+data class IndianMedicineEntity(
+    @PrimaryKey val id: Int,
+    val name: String,
+    val price: String,
+    val isDiscontinued: Boolean,
+    val manufacturerName: String,
+    val type: String,
+    val packSizeLabel: String,
+    val shortComposition1: String,
+    val shortComposition2: String,
+    val substitute0: String,
+    val substitute1: String,
+    val substitute2: String,
+    val substitute3: String,
+    val substitute4: String,
+    val sideEffects: String,
+    val use0: String,
+    val use1: String,
+    val use2: String,
+    val use3: String,
+    val use4: String,
+    val chemicalClass: String,
+    val habitForming: String,
+    val therapeuticClass: String,
+    val actionClass: String
+)
+
+@Entity(tableName = "indian_products")
+data class IndianProductEntity(
+    @PrimaryKey val productId: Int,
+    val brandName: String,
+    val manufacturer: String,
+    val priceInr: String,
+    val isDiscontinued: String,
+    val dosageForm: String,
+    val packSize: String,
+    val packUnit: String,
+    val numActiveIngredients: String,
+    val primaryIngredient: String,
+    val primaryStrength: String,
+    val activeIngredients: String,
+    val therapeuticClass: String,
+    val packagingRaw: String,
+    val manufacturerRaw: String
+)
+
+@Entity(tableName = "jan_aushadhi_medicines")
+data class JanAushadhiEntity(
+    @PrimaryKey val srNo: Int,
+    val drugCode: String,
+    val genericName: String,
+    val unitSize: String,
+    val mrp: String,
+    val groupName: String
+)
+
+@Entity(tableName = "medicine_scans")
+data class MedicineScanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val medicineName: String,
+    val composition: String,
+    val strength: String,
+    val dosageForm: String,
+    val manufacturer: String,
+    val price: String,
+    val dosage: String,
+    val frequency: String,
+    val duration: String,
+    val source: String, // e.g., "Prescription", "Medicine Box"
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 @Dao
 interface SwasthyaDao {
     @Query("SELECT * FROM users WHERE id = 1")
@@ -153,9 +226,44 @@ interface SwasthyaDao {
 
     @androidx.room.Delete
     suspend fun deletePhysician(physician: PhysicianEntity)
+
+    // Medicine Intelligence Queries
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertIndianMedicines(medicines: List<IndianMedicineEntity>)
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertIndianProducts(products: List<IndianProductEntity>)
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertJanAushadhi(medicines: List<JanAushadhiEntity>)
+
+    @Query("SELECT COUNT(*) FROM indian_medicines")
+    suspend fun getIndianMedicinesCount(): Int
+
+    @Query("SELECT * FROM indian_products WHERE brandName LIKE '%' || :name || '%' LIMIT 10")
+    suspend fun searchProductsByName(name: String): List<IndianProductEntity>
+
+    @Query("SELECT * FROM indian_medicines WHERE name LIKE '%' || :name || '%' LIMIT 10")
+    suspend fun searchMedicinesByName(name: String): List<IndianMedicineEntity>
+
+    @Query("SELECT * FROM indian_products WHERE primaryIngredient LIKE '%' || :composition || '%' AND dosageForm LIKE '%' || :dosageForm || '%' ORDER BY CAST(priceInr AS REAL) ASC LIMIT 20")
+    suspend fun searchAlternatives(composition: String, dosageForm: String): List<IndianProductEntity>
+
+    @Query("SELECT * FROM jan_aushadhi_medicines WHERE genericName LIKE '%' || :composition || '%' ORDER BY CAST(mrp AS REAL) ASC LIMIT 5")
+    suspend fun searchJanAushadhiAlternatives(composition: String): List<JanAushadhiEntity>
+
+    // Medicine Scans
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertMedicineScan(scan: MedicineScanEntity)
+
+    @Query("SELECT * FROM medicine_scans ORDER BY timestamp DESC")
+    fun getAllMedicineScans(): Flow<List<MedicineScanEntity>>
+
+    @androidx.room.Delete
+    suspend fun deleteMedicineScan(scan: MedicineScanEntity)
 }
 
-@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class], version = 16, exportSchema = false)
+@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class, IndianMedicineEntity::class, IndianProductEntity::class, JanAushadhiEntity::class, MedicineScanEntity::class], version = 17, exportSchema = false)
 abstract class SwasthyaDatabase : RoomDatabase() {
     abstract fun swasthyaDao(): SwasthyaDao
 
@@ -179,6 +287,15 @@ abstract class SwasthyaDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `indian_medicines` (`id` INTEGER NOT NULL, `name` TEXT NOT NULL, `price` TEXT NOT NULL, `isDiscontinued` INTEGER NOT NULL, `manufacturerName` TEXT NOT NULL, `type` TEXT NOT NULL, `packSizeLabel` TEXT NOT NULL, `shortComposition1` TEXT NOT NULL, `shortComposition2` TEXT NOT NULL, `substitute0` TEXT NOT NULL, `substitute1` TEXT NOT NULL, `substitute2` TEXT NOT NULL, `substitute3` TEXT NOT NULL, `substitute4` TEXT NOT NULL, `sideEffects` TEXT NOT NULL, `use0` TEXT NOT NULL, `use1` TEXT NOT NULL, `use2` TEXT NOT NULL, `use3` TEXT NOT NULL, `use4` TEXT NOT NULL, `chemicalClass` TEXT NOT NULL, `habitForming` TEXT NOT NULL, `therapeuticClass` TEXT NOT NULL, `actionClass` TEXT NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `indian_products` (`productId` INTEGER NOT NULL, `brandName` TEXT NOT NULL, `manufacturer` TEXT NOT NULL, `priceInr` TEXT NOT NULL, `isDiscontinued` TEXT NOT NULL, `dosageForm` TEXT NOT NULL, `packSize` TEXT NOT NULL, `packUnit` TEXT NOT NULL, `numActiveIngredients` TEXT NOT NULL, `primaryIngredient` TEXT NOT NULL, `primaryStrength` TEXT NOT NULL, `activeIngredients` TEXT NOT NULL, `therapeuticClass` TEXT NOT NULL, `packagingRaw` TEXT NOT NULL, `manufacturerRaw` TEXT NOT NULL, PRIMARY KEY(`productId`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `jan_aushadhi_medicines` (`srNo` INTEGER NOT NULL, `drugCode` TEXT NOT NULL, `genericName` TEXT NOT NULL, `unitSize` TEXT NOT NULL, `mrp` TEXT NOT NULL, `groupName` TEXT NOT NULL, PRIMARY KEY(`srNo`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `medicine_scans` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `medicineName` TEXT NOT NULL, `composition` TEXT NOT NULL, `strength` TEXT NOT NULL, `dosageForm` TEXT NOT NULL, `manufacturer` TEXT NOT NULL, `price` TEXT NOT NULL, `dosage` TEXT NOT NULL, `frequency` TEXT NOT NULL, `duration` TEXT NOT NULL, `source` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)")
+            }
+        }
+
         fun getDatabase(context: Context): SwasthyaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -186,7 +303,7 @@ abstract class SwasthyaDatabase : RoomDatabase() {
                     SwasthyaDatabase::class.java,
                     "swasthya_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_16_17)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

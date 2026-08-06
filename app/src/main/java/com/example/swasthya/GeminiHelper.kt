@@ -149,30 +149,36 @@ object GeminiHelper {
         }
     }
 
+    suspend fun fileToBitmap(localUri: String): Bitmap? {
+        return withContext(Dispatchers.IO) {
+            val file = File(localUri)
+            if (!file.exists()) return@withContext null
+            if (file.name.endsWith(".pdf", ignoreCase = true)) {
+                val parcelFileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+                val pdfRenderer = PdfRenderer(parcelFileDescriptor)
+                var bitmap: Bitmap? = null
+                if (pdfRenderer.pageCount > 0) {
+                    val page = pdfRenderer.openPage(0)
+                    bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.close()
+                }
+                pdfRenderer.close()
+                parcelFileDescriptor.close()
+                bitmap
+            } else {
+                BitmapFactory.decodeFile(file.absolutePath)
+            }
+        }
+    }
+
     suspend fun analyzeMedicalReport(context: Context, localUri: String): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val file = File(localUri)
-                if (!file.exists()) return@withContext null
-
-                var bitmap: Bitmap? = null
-                if (file.name.endsWith(".pdf", ignoreCase = true)) {
-                    val parcelFileDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                    val pdfRenderer = PdfRenderer(parcelFileDescriptor)
-                    if (pdfRenderer.pageCount > 0) {
-                        val page = pdfRenderer.openPage(0)
-                        bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
-                        bitmap.eraseColor(android.graphics.Color.WHITE)
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        page.close()
-                    }
-                    pdfRenderer.close()
-                    parcelFileDescriptor.close()
-                } else {
-                    bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                }
-
+                val bitmap = fileToBitmap(localUri)
                 if (bitmap == null) return@withContext null
+
 
                 val prompt = """
                     You are an expert AI medical assistant. Analyze this medical report carefully.
@@ -199,17 +205,13 @@ object GeminiHelper {
         return withContext(Dispatchers.IO) {
             try {
                 val prompt = """
-                    You are an expert pharmacist AI. Analyze this image of a medicine/drug packaging or pill bottle.
-                    Provide detailed information about the medicine. You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
+                    You are an expert AI pharmacist. Analyze this image of a medicine/drug packaging or pill bottle.
+                    Extract the following details. You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
                     {
-                        "brand": "Brand Name",
-                        "genericName": "Generic Name",
-                        "use": "What it is used for",
-                        "dosage": "Typical dosage found on the package",
-                        "manufacturer": "Manufacturer name",
-                        "sideEffects": "Common side effects",
-                        "interactions": "Potential drug interactions",
-                        "isGenuine": "Does this look like a genuine manufacturer product based on standard packaging? (Yes/No/Unsure)"
+                        "name": "Brand or Generic Name",
+                        "strength": "e.g., 500mg",
+                        "dosageForm": "e.g., Tablet, Syrup, Injection",
+                        "manufacturer": "Manufacturer Name"
                     }
                 """.trimIndent()
 
@@ -227,15 +229,66 @@ object GeminiHelper {
                 }
                 val json = JSONObject(jsonString)
                 MedicineAnalysis(
-                    brand = json.optString("brand", "Unknown"),
-                    genericName = json.optString("genericName", "Unknown"),
-                    use = json.optString("use", "Unknown"),
-                    dosage = json.optString("dosage", "Unknown"),
-                    manufacturer = json.optString("manufacturer", "Unknown"),
-                    sideEffects = json.optString("sideEffects", "Unknown"),
-                    interactions = json.optString("interactions", "Unknown"),
-                    isGenuine = json.optString("isGenuine", "Unknown")
+                    name = json.optString("name", "Unknown"),
+                    strength = json.optString("strength", "Unknown"),
+                    dosageForm = json.optString("dosageForm", "Unknown"),
+                    manufacturer = json.optString("manufacturer", "Unknown")
                 )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    suspend fun extractPrescription(bitmap: Bitmap): List<PrescribedMedicine>? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val prompt = """
+                    You are an expert AI medical assistant. Analyze this prescription image/document.
+                    Extract the list of prescribed medicines. You MUST return ONLY a valid JSON array in the exact following format, with no markdown formatting or backticks around it:
+                    [
+                        {
+                            "medicineName": "Name of the medicine",
+                            "strength": "e.g., 500mg",
+                            "dosageForm": "e.g., Tablet, Capsule",
+                            "dose": "e.g., 1 tablet",
+                            "frequency": "e.g., Twice a day",
+                            "duration": "e.g., 5 days",
+                            "instructions": "e.g., After meals"
+                        }
+                    ]
+                """.trimIndent()
+
+                val inputContent = content {
+                    image(bitmap)
+                    text(prompt)
+                }
+                val response = generativeModel.generateContent(inputContent)
+                android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
+                var jsonString = response.text ?: "[]"
+                val startIndex = jsonString.indexOf('[')
+                val endIndex = jsonString.lastIndexOf(']')
+                if (startIndex != -1 && endIndex != -1 && startIndex <= endIndex) {
+                    jsonString = jsonString.substring(startIndex, endIndex + 1)
+                }
+                val jsonArray = JSONArray(jsonString)
+                val medicines = mutableListOf<PrescribedMedicine>()
+                for (i in 0 until jsonArray.length()) {
+                    val json = jsonArray.getJSONObject(i)
+                    medicines.add(
+                        PrescribedMedicine(
+                            medicineName = json.optString("medicineName", ""),
+                            strength = json.optString("strength", ""),
+                            dosageForm = json.optString("dosageForm", ""),
+                            dose = json.optString("dose", ""),
+                            frequency = json.optString("frequency", ""),
+                            duration = json.optString("duration", ""),
+                            instructions = json.optString("instructions", "")
+                        )
+                    )
+                }
+                medicines
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
@@ -296,14 +349,20 @@ object GeminiHelper {
 }
 
 data class MedicineAnalysis(
-    val brand: String,
-    val genericName: String,
-    val use: String,
-    val dosage: String,
-    val manufacturer: String,
-    val sideEffects: String,
-    val interactions: String,
-    val isGenuine: String
+    val name: String,
+    val strength: String,
+    val dosageForm: String,
+    val manufacturer: String
+)
+
+data class PrescribedMedicine(
+    val medicineName: String,
+    val strength: String,
+    val dosageForm: String,
+    val dose: String,
+    val frequency: String,
+    val duration: String,
+    val instructions: String
 )
 
 data class DrugInteractionResult(

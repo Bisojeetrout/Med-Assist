@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -41,7 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import com.google.firebase.auth.FirebaseAuth
-
+import androidx.compose.ui.unit.dp
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -154,6 +156,7 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
         }
         composable("dashboard") {
             DashboardScreen(
+                dao = dao,
                 user = user,
                 onUpdateUser = { updatedUser ->
                     coroutineScope.launch {
@@ -226,6 +229,12 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                 },
                 onNavigateToInsights = { steps, hr, calories ->
                     navController.navigate("insights/$steps/$hr/$calories")
+                },
+                onNavigateToGenericExplorer = {
+                    navController.navigate("generic_explorer")
+                },
+                onNavigateToScanHistory = {
+                    navController.navigate("scan_history")
                 },
                 onSignOut = {
                     com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
@@ -325,6 +334,26 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+        composable(
+            "generic_explorer",
+            enterTransition = { slideIntoContainer(androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Left, androidx.compose.animation.core.tween(300)) },
+            exitTransition = { slideOutOfContainer(androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Right, androidx.compose.animation.core.tween(300)) }
+        ) {
+            com.example.swasthya.ui.screens.GenericExplorerScreen(
+                dao = dao,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            "scan_history",
+            enterTransition = { slideIntoContainer(androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Left, androidx.compose.animation.core.tween(300)) },
+            exitTransition = { slideOutOfContainer(androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Right, androidx.compose.animation.core.tween(300)) }
+        ) {
+            com.example.swasthya.ui.screens.ScanHistoryScreen(
+                dao = dao,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }
 
@@ -334,6 +363,8 @@ fun SplashScreen(
     onNavigateNext: (String) -> Unit
 ) {
     var startAnimation by remember { mutableStateOf(false) }
+    var dbInitProgress by remember { mutableStateOf(0f) }
+    var isDbInitialized by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0.85f,
         animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
@@ -345,9 +376,26 @@ fun SplashScreen(
         label = "alpha"
     )
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     LaunchedEffect(Unit) {
         startAnimation = true
-        delay(3000) // Show for 3 seconds
+        
+        // Run DB initialization and minimum animation delay concurrently
+        launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.example.swasthya.data.DatabaseInitializer.initializeDatabaseIfNeed(context, dao) { progress ->
+                dbInitProgress = progress
+            }
+            isDbInitialized = true
+        }
+        
+        delay(3000) // Minimum show time for 3 seconds
+        
+        // Wait for DB initialization to complete if it takes longer than 3s
+        while (!isDbInitialized) {
+            delay(100)
+        }
+
         
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser != null) {
@@ -368,14 +416,30 @@ fun SplashScreen(
             .background(Color.White),
         contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.medassist_logo_full),
-            contentDescription = "MedAssist Splash Logo",
-            modifier = Modifier
-                .fillMaxWidth(0.8f)
-                .scale(scale)
-                .alpha(alpha),
-            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-        )
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.medassist_logo_full),
+                contentDescription = "MedAssist Splash Logo",
+                modifier = Modifier
+                    .fillMaxWidth(0.8f)
+                    .scale(scale)
+                    .alpha(alpha),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+            )
+            
+            if (dbInitProgress > 0f && dbInitProgress < 1f) {
+                Spacer(modifier = Modifier.height(32.dp))
+                androidx.compose.material3.Text("Initializing Medicine Database...", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Spacer(modifier = Modifier.height(8.dp))
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { dbInitProgress },
+                    modifier = Modifier.fillMaxWidth(0.5f),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
+        }
     }
 }

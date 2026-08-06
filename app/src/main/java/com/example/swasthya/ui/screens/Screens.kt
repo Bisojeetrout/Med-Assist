@@ -153,6 +153,7 @@ fun AuthScreen(onNavigateToDashboard: () -> Unit) {
 
 @Composable
 fun DashboardScreen(
+    dao: com.example.swasthya.data.SwasthyaDao,
     user: UserEntity? = null,
     onUpdateUser: (UserEntity) -> Unit = {},
     vitals: List<VitalsEntity>,
@@ -169,6 +170,8 @@ fun DashboardScreen(
     onNavigateToReports: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onNavigateToInsights: (String, String, String) -> Unit = { _, _, _ -> },
+    onNavigateToGenericExplorer: () -> Unit = {},
+    onNavigateToScanHistory: () -> Unit = {},
     onSignOut: () -> Unit = {},
     startWithFoodLog: Boolean = false,
     onShareWithPhysician: () -> Unit = {},
@@ -513,8 +516,9 @@ fun DashboardScreen(
             }
         },
         floatingActionButton = {
-            Column(
-                horizontalAlignment = Alignment.End,
+            if (selectedTab != 0) {
+                Column(
+                    horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (isFabMenuExpanded) {
@@ -652,13 +656,24 @@ fun DashboardScreen(
                     }
                 }
             }
+            }
         }
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (selectedTab) {
-                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood, onDeleteFood = onDeleteFood, onNavigateToVitals = { selectedTab = 1 })
+                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood, onDeleteFood = onDeleteFood, onNavigateToVitals = { selectedTab = 1 }, onScanPrescription = {
+                        docScanner.getStartScanIntent(context as android.app.Activity)
+                            .addOnSuccessListener { intentSender ->
+                                docScannerLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
+                            }
+                            .addOnFailureListener { e -> android.util.Log.e("Scanner", "Error starting scanner", e) }
+                    },
+                    onScanMedicine = {
+                        pharmaLensScanCameraLauncher.launch(pharmaLensScanPhotoUri)
+                    },
+                    onGenericExplorer = onNavigateToGenericExplorer)
                 1 -> VitalsScreen(user, onUpdateUser, vitals, onAddVitals, foods, onAddFood, onDeleteFood = onDeleteFood, onSyncRequested = {})
-                2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, onNavigateToReports)
+                2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, onNavigateToReports, onNavigateToScanHistory)
                 3 -> ProfileScreen(
                     user = user,
                     onUpdateUser = onUpdateUser,
@@ -886,24 +901,22 @@ fun DashboardScreen(
                 )
             }
 
-            // Pharma Lens Result Dialog
+            // Medicine Scan Result
             if (showPharmaLensScanDialog && pharmaLensScanAnalysis != null) {
-                PharmaLensResultDialog(
+                com.example.swasthya.ui.screens.MedicineScanResultBottomSheet(
                     analysis = pharmaLensScanAnalysis!!,
+                    dao = dao,
                     onDismiss = { showPharmaLensScanDialog = false },
-                    onConfirmConsume = { timesPerDay ->
+                    onFindCheaperAlternative = { comp, group ->
                         showPharmaLensScanDialog = false
-                        val cal = java.util.Calendar.getInstance()
-                        onAddMedicine(MedicineEntity(
-                            name = pharmaLensScanAnalysis!!.brand,
-                            dosage = pharmaLensScanAnalysis!!.dosage,
-                            schedule = "$timesPerDay times a day",
-                            explanation = pharmaLensScanAnalysis!!.use,
-                            timeInMillis = cal.timeInMillis,
-                            timeLabel = SimpleDateFormat("hh:mm a", Locale.US).format(cal.time),
-                            reminderType = "Medicine",
-                            hasImage = false
-                        ))
+                        onNavigateToGenericExplorer()
+                    },
+                    onSaveScan = { scanEntity ->
+                        coroutineScope.launch {
+                            dao.insertMedicineScan(scanEntity)
+                            android.widget.Toast.makeText(context, "Saved to Scan History", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        showPharmaLensScanDialog = false
                     }
                 )
             }
@@ -990,7 +1003,10 @@ fun HomeScreen(
     onShareWithPhysician: () -> Unit = {},
     onAddFood: (FoodEntity) -> Unit = {},
     onDeleteFood: (FoodEntity) -> Unit = {},
-    onNavigateToVitals: () -> Unit = {}
+    onNavigateToVitals: () -> Unit = {},
+    onScanPrescription: () -> Unit = {},
+    onScanMedicine: () -> Unit = {},
+    onGenericExplorer: () -> Unit = {}
 ) {
     var currentView by remember { mutableStateOf("Home") }
 
@@ -1243,7 +1259,6 @@ fun HomeScreen(
                 dismissButton = {
                     Button(
                         onClick = { showSosDialog = false; triggerText() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) { Text("Text (SMS)") }
                 }
             )
@@ -1253,11 +1268,12 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1284,231 +1300,189 @@ fun HomeScreen(
                         else -> showSosDialog = true
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(Icons.Default.Warning, contentDescription = "Emergency", tint = Color.White)
                 Spacer(Modifier.width(8.dp))
-                Text("SOS / EMERGENCY ALERT", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("EMERGENCY", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
 
-            // Dynamic Drug Interaction Checker Card
-            if (isLoadingInteractions) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Analyzing Drug Interactions...", fontWeight = FontWeight.Bold)
-                            Text("Gemini is screening your active medications...", fontSize = 13.sp, color = Color.Gray)
-                        }
-                    }
-                }
-            } else {
-                val result = drugInteractionResult
-                if (result != null) {
-                    val containerColor = if (result.hasInteraction) Color(0xFFFFEBEE) else Color(0xFFE8F5E9)
-                    val tintColor = if (result.hasInteraction) Color.Red else Color(0xFF2E7D32)
-                    val icon = if (result.hasInteraction) Icons.Default.Warning else Icons.Default.CheckCircle
-                    val title = if (result.hasInteraction) "Potential Drug Interaction Detected" else "Medication Compatibility Check"
-                    val subtitle = if (result.hasInteraction) {
-                        "Interaction risk between: ${result.interactedDrugs.joinToString(", ")}"
+            // Today's Medicines
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("💊 Today's Medicines", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    val todaysMeds = medicines.filter { !it.isTaken }
+                    if (todaysMeds.isEmpty()) {
+                        Text("No medicines added – Scan Prescription", color = Color.Gray, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                     } else {
-                        "No known drug-drug interactions were identified for this combination."
-                    }
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showInteractionDetailDialog = true },
-                        colors = CardDefaults.cardColors(containerColor = containerColor)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(icon, contentDescription = "Interaction Check Status", tint = tintColor, modifier = Modifier.size(28.dp))
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(title, fontWeight = FontWeight.Bold, color = tintColor)
-                                Text(subtitle, color = Color.DarkGray, fontSize = 13.sp)
+                        todaysMeds.take(3).forEach { med ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(med.name ?: "Unknown Medicine", fontWeight = FontWeight.Bold)
+                                    Text("${med.dosage} - ${med.timeLabel}", fontSize = 12.sp, color = Color.Gray)
+                                }
+                                Text("Not Taken", color = Color(0xFFC62828), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
-                            Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = "View Details", tint = tintColor)
-                        }
-                    }
-                } else {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Info, contentDescription = "Checker Info", tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Drug Interaction Shield", fontWeight = FontWeight.Bold)
-                                Text("Add 2 or more medicines in Records to check compatibility automatically.", fontSize = 13.sp, color = Color.Gray)
-                            }
+                            if (med != todaysMeds.take(3).last()) HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Today's Summary
-            Text("Today's Summary", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(16.dp))
-            
+            // Medication Safety (Compact)
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { showInteractionDetailDialog = true },
+                colors = CardDefaults.cardColors(containerColor = if (drugInteractionResult?.hasInteraction == true) Color(0xFFFFEBEE) else Color(0xFFE8F5E9))
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val tintColor = if (drugInteractionResult?.hasInteraction == true) Color.Red else Color(0xFF2E7D32)
+                    Icon(
+                        if (drugInteractionResult?.hasInteraction == true) Icons.Default.Warning else Icons.Default.CheckCircle, 
+                        contentDescription = "Safety", 
+                        tint = tintColor
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Medication Safety", fontWeight = FontWeight.Bold, color = tintColor)
+                        if (isLoadingInteractions) {
+                            Text("Analyzing active medications...", fontSize = 12.sp, color = Color.Gray)
+                        } else {
+                            Text(
+                                if (drugInteractionResult?.hasInteraction == true) "Interaction alerts require attention!" else "No interaction alerts", 
+                                fontSize = 12.sp, 
+                                color = Color.DarkGray
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Quick Actions
+            Text("Quick Actions", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Steps Card
-                Card(
-                    modifier = Modifier.weight(1f).aspectRatio(0.8f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F4FF))
+                Button(
+                    onClick = onScanPrescription,
+                    modifier = Modifier.weight(1f).height(64.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(4.dp)
                 ) {
-                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("👟", fontSize = 24.sp)
-                        Text("Steps", fontSize = 12.sp, color = Color.Gray)
-                        Text(steps, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1565C0))
-                        Text("/ 10,000", fontSize = 10.sp, color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Text("Scan\nPrescription", fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 12.sp)
                     }
                 }
                 
-                // HR Card
-                Card(
-                    modifier = Modifier.weight(1f).aspectRatio(0.8f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF0F0))
+                Button(
+                    onClick = onScanMedicine,
+                    modifier = Modifier.weight(1f).height(64.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(4.dp)
                 ) {
-                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("❤️", fontSize = 24.sp)
-                        Text("Heart Rate", fontSize = 12.sp, color = Color.Gray)
-                        Text(hr, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFC62828))
-                        Text("bpm", fontSize = 10.sp, color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Text("Scan\nMedicine", fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 12.sp)
                     }
                 }
                 
-                // Calories Card
-                Card(
-                    modifier = Modifier.weight(1f).aspectRatio(0.8f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7E6))
+                Button(
+                    onClick = onGenericExplorer,
+                    modifier = Modifier.weight(1f).height(64.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(4.dp)
                 ) {
-                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("🔥", fontSize = 24.sp)
-                        Text("Calories", fontSize = 12.sp, color = Color.Gray)
-                        Text(calories, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFEF6C00))
-                        Text("kcal", fontSize = 10.sp, color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Text("Generic\nExplorer", fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 12.sp)
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Food Consumed Card
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { onNavigateToVitals() },
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9))
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("🍽️", fontSize = 32.sp)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Food Consumed", fontSize = 12.sp, color = Color.Gray)
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text("$caloriesConsumed", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF2E7D32))
-                            Text(" / 2,000 kcal", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 2.dp))
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        androidx.compose.material3.LinearProgressIndicator(
-                            progress = { (caloriesConsumed / 2000f).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(6.dp),
-                            color = Color(0xFF4CAF50),
-                            trackColor = Color(0xFFC8E6C9)
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Quick AI Summary Card
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { showQuickSummaryDialog = true },
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5)) // Light Purple
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Star, contentDescription = "AI", tint = Color(0xFF7B1FA2), modifier = Modifier.size(32.dp))
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Quick AI Summary", fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
-                        Text("Get a snapshot of your health with AI.", fontSize = 12.sp, color = Color.Gray)
-                    }
-                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF7B1FA2))
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
 
-            // AI Health Insights Button
-            Button(
-                onClick = { onNavigateToInsights(steps, hr, calories) },
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+            // AI Health Summary
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5))
             ) {
-                Text("📊 Full AI Health Insights", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // One-Tap Share
-            Button(
-                onClick = onShareWithPhysician,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Share, contentDescription = "Share")
-                Spacer(Modifier.width(8.dp))
-                Text("One-Tap Share with Physician")
-            }
-        }
-
-        if (showQuickSummaryDialog) {
-            AlertDialog(
-                onDismissRequest = { showQuickSummaryDialog = false },
-                title = { Text("âœ¨ Quick AI Summary") },
-                text = {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Star, contentDescription = "AI", tint = Color(0xFF7B1FA2))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("AI Health Summary", fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2), fontSize = 18.sp)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
                     if (quickSummaryText == null) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                            CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Generating summary...")
-                        }
                         LaunchedEffect(Unit) {
-                            val todayStartCalendar = Calendar.getInstance().apply {
-                                set(Calendar.HOUR_OF_DAY, 0)
-                                set(Calendar.MINUTE, 0)
-                                set(Calendar.SECOND, 0)
-                                set(Calendar.MILLISECOND, 0)
+                            val todayStartCalendar = java.util.Calendar.getInstance().apply {
+                                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                set(java.util.Calendar.MINUTE, 0)
+                                set(java.util.Calendar.SECOND, 0)
+                                set(java.util.Calendar.MILLISECOND, 0)
                             }.timeInMillis
                             val summary = com.example.swasthya.GeminiHelper.getQuickSummary(
                                 steps, hr, calories, foods.count { it.timestamp >= todayStartCalendar }, reports, medicines
                             )
                             quickSummaryText = summary
                         }
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally).size(24.dp))
                     } else {
-                        Text(quickSummaryText!!)
+                        Text(quickSummaryText!!, fontSize = 14.sp, color = Color.DarkGray)
                     }
-                },
-                confirmButton = {
-                    Button(onClick = { 
-                        showQuickSummaryDialog = false
-                        quickSummaryText = null 
-                    }) {
-                        Text("Close")
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(
+                        onClick = { onNavigateToInsights(steps, hr, calories) },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("View Full Insights", fontWeight = FontWeight.Bold, color = Color(0xFF7B1FA2))
                     }
                 }
-            )
+            }
+
+            // Compact Today's Health
+            Text("Today's Health", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Steps Card
+                Card(modifier = Modifier.weight(1f).aspectRatio(0.9f), colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F4FF))) {
+                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("👟", fontSize = 24.sp)
+                        Text("Steps", fontSize = 12.sp, color = Color.Gray)
+                        Text(steps, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF1565C0))
+                    }
+                }
+                // HR Card
+                Card(modifier = Modifier.weight(1f).aspectRatio(0.9f), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF0F0))) {
+                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("❤️", fontSize = 24.sp)
+                        Text("HR", fontSize = 12.sp, color = Color.Gray)
+                        Text(hr, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFFC62828))
+                    }
+                }
+                // Calories Card
+                Card(modifier = Modifier.weight(1f).aspectRatio(0.9f), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7E6))) {
+                    Column(modifier = Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🔥", fontSize = 24.sp)
+                        Text("Calories", fontSize = 12.sp, color = Color.Gray)
+                        Text(calories, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFFEF6C00))
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 
@@ -2247,7 +2221,8 @@ fun RecordsScreen(
     onDeleteMedicine: (MedicineEntity) -> Unit = {},
     reports: List<ReportEntity> = emptyList(),
     onAddReport: (ReportEntity) -> Unit = {},
-    onNavigateToReports: () -> Unit = {}
+    onNavigateToReports: () -> Unit = {},
+    onNavigateToScanHistory: () -> Unit = {}
 ) {
     var currentView by remember { mutableStateOf("Menu") }
 
@@ -2287,6 +2262,22 @@ fun RecordsScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
             
+            // Scan History Card
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToScanHistory() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Search, contentDescription = "Scan History", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Medicine Scan History", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("View previously scanned medicines and prescriptions", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
             // Medications Card
             Card(
                 modifier = Modifier.fillMaxWidth().clickable { currentView = "Medications" },
@@ -2782,10 +2773,10 @@ fun MedicationsScreen(
                 showPharmaLensDialog = false
                 val cal = java.util.Calendar.getInstance()
                 onAddMedicine(MedicineEntity(
-                    name = pharmaLensAnalysis!!.brand,
-                    dosage = pharmaLensAnalysis!!.dosage,
+                    name = pharmaLensAnalysis!!.name,
+                    dosage = pharmaLensAnalysis!!.dosageForm,
                     schedule = "$timesPerDay times a day",
-                    explanation = pharmaLensAnalysis!!.use,
+                    explanation = pharmaLensAnalysis!!.strength,
 timeInMillis = cal.timeInMillis,
                     timeLabel = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(cal.time),
                     reminderType = "Medicine",
@@ -3751,17 +3742,12 @@ fun PharmaLensResultDialog(
         title = { Text("💊 Pharma Lens Analysis") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text("Brand: ${analysis.brand}", fontWeight = FontWeight.Bold)
-                Text("Generic: ${analysis.genericName}")
+                Text("Medicine: ${analysis.name}", fontWeight = FontWeight.Bold)
+                Text("Strength: ${analysis.strength}")
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("Use: ${analysis.use}")
-                Text("Dosage: ${analysis.dosage}")
+                Text("Form: ${analysis.dosageForm}")
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Manufacturer: ${analysis.manufacturer}")
-                Text("Genuine Check: ${analysis.isGenuine}", color = if (analysis.isGenuine.contains("Yes", ignoreCase = true)) Color(0xFF2E7D32) else Color.Red)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Side Effects: ${analysis.sideEffects}")
-                Text("Interactions: ${analysis.interactions}", color = Color(0xFFC62828))
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
