@@ -206,9 +206,10 @@ object GeminiHelper {
             try {
                 val prompt = """
                     You are an expert AI pharmacist. Analyze this image of a medicine/drug packaging or pill bottle.
-                    Extract the following details. You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
+                    Extract ONLY identifying information. You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
                     {
-                        "name": "Brand or Generic Name",
+                        "name": "Brand Name",
+                        "genericName": "Visible Generic or Salt Name",
                         "strength": "e.g., 500mg",
                         "dosageForm": "e.g., Tablet, Syrup, Injection",
                         "manufacturer": "Manufacturer Name"
@@ -230,6 +231,7 @@ object GeminiHelper {
                 val json = JSONObject(jsonString)
                 MedicineAnalysis(
                     name = json.optString("name", "Unknown"),
+                    genericName = json.optString("genericName", "Unknown"),
                     strength = json.optString("strength", "Unknown"),
                     dosageForm = json.optString("dosageForm", "Unknown"),
                     manufacturer = json.optString("manufacturer", "Unknown")
@@ -241,23 +243,27 @@ object GeminiHelper {
         }
     }
 
-    suspend fun extractPrescription(bitmap: Bitmap): List<PrescribedMedicine>? {
+    suspend fun extractPrescription(bitmap: Bitmap): PrescriptionAnalysisResult? {
         return withContext(Dispatchers.IO) {
             try {
                 val prompt = """
                     You are an expert AI medical assistant. Analyze this prescription image/document.
-                    Extract the list of prescribed medicines. You MUST return ONLY a valid JSON array in the exact following format, with no markdown formatting or backticks around it:
-                    [
-                        {
-                            "medicineName": "Name of the medicine",
-                            "strength": "e.g., 500mg",
-                            "dosageForm": "e.g., Tablet, Capsule",
-                            "dose": "e.g., 1 tablet",
-                            "frequency": "e.g., Twice a day",
-                            "duration": "e.g., 5 days",
-                            "instructions": "e.g., After meals"
-                        }
-                    ]
+                    Extract the list of prescribed medicines and a general treatment context. Do NOT diagnose the patient.
+                    You MUST return ONLY a valid JSON object in the exact following format, with no markdown formatting or backticks around it:
+                    {
+                        "context": "General treatment context (e.g. These medicines are commonly used in treatment plans involving...)",
+                        "medicines": [
+                            {
+                                "medicineName": "Name of the medicine",
+                                "strength": "e.g., 500mg",
+                                "dosageForm": "e.g., Tablet, Capsule",
+                                "dose": "e.g., 1 tablet",
+                                "frequency": "e.g., Twice a day",
+                                "duration": "e.g., 5 days",
+                                "instructions": "e.g., After meals"
+                            }
+                        ]
+                    }
                 """.trimIndent()
 
                 val inputContent = content {
@@ -266,13 +272,16 @@ object GeminiHelper {
                 }
                 val response = generativeModel.generateContent(inputContent)
                 android.util.Log.d("GeminiHelper", "AI_PROVIDER = GEMINI")
-                var jsonString = response.text ?: "[]"
-                val startIndex = jsonString.indexOf('[')
-                val endIndex = jsonString.lastIndexOf(']')
+                var jsonString = response.text ?: "{}"
+                val startIndex = jsonString.indexOf('{')
+                val endIndex = jsonString.lastIndexOf('}')
                 if (startIndex != -1 && endIndex != -1 && startIndex <= endIndex) {
                     jsonString = jsonString.substring(startIndex, endIndex + 1)
                 }
-                val jsonArray = JSONArray(jsonString)
+                val jsonResult = JSONObject(jsonString)
+                val contextString = jsonResult.optString("context", "General treatment context not available.")
+                val jsonArray = jsonResult.optJSONArray("medicines") ?: JSONArray()
+                
                 val medicines = mutableListOf<PrescribedMedicine>()
                 for (i in 0 until jsonArray.length()) {
                     val json = jsonArray.getJSONObject(i)
@@ -288,7 +297,7 @@ object GeminiHelper {
                         )
                     )
                 }
-                medicines
+                PrescriptionAnalysisResult(contextString, medicines)
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
@@ -350,9 +359,15 @@ object GeminiHelper {
 
 data class MedicineAnalysis(
     val name: String,
+    val genericName: String,
     val strength: String,
     val dosageForm: String,
     val manufacturer: String
+)
+
+data class PrescriptionAnalysisResult(
+    val context: String,
+    val medicines: List<PrescribedMedicine>
 )
 
 data class PrescribedMedicine(

@@ -172,6 +172,7 @@ fun DashboardScreen(
     onNavigateToInsights: (String, String, String) -> Unit = { _, _, _ -> },
     onNavigateToGenericExplorer: () -> Unit = {},
     onNavigateToScanHistory: () -> Unit = {},
+    onNavigateToEmergencyTools: () -> Unit = {},
     onSignOut: () -> Unit = {},
     startWithFoodLog: Boolean = false,
     onShareWithPhysician: () -> Unit = {},
@@ -358,8 +359,12 @@ fun DashboardScreen(
     var isFabMenuExpanded by remember { mutableStateOf(false) }
 
     var pendingScanReportFile by remember { mutableStateOf<File?>(null) }
+    var pendingPrescriptionFile by remember { mutableStateOf<File?>(null) }
     var scanReportNameInput by remember { mutableStateOf("") }
     var isUploadingScanReport by remember { mutableStateOf(false) }
+    var isProcessingPrescription by remember { mutableStateOf(false) }
+    var prescriptionAnalysisResult by remember { mutableStateOf<com.example.swasthya.PrescriptionAnalysisResult?>(null) }
+    var showPrescriptionDialog by remember { mutableStateOf(false) }
 
     val scannerOptions = remember {
         GmsDocumentScannerOptions.Builder()
@@ -389,7 +394,7 @@ fun DashboardScreen(
                     inputStream?.copyTo(outputStream)
                     inputStream?.close()
                     outputStream.close()
-                    pendingScanReportFile = outFile
+                    pendingPrescriptionFile = outFile
                     scanReportNameInput = ""
                 } catch (e: Exception) {
                     Log.e("Scanner", "Error saving scanned file", e)
@@ -404,7 +409,7 @@ fun DashboardScreen(
                     inputStream?.copyTo(outputStream)
                     inputStream?.close()
                     outputStream.close()
-                    pendingScanReportFile = outFile
+                    pendingPrescriptionFile = outFile
                     scanReportNameInput = ""
                 } catch (e: Exception) {
                     Log.e("Scanner", "Error saving scanned file", e)
@@ -661,7 +666,7 @@ fun DashboardScreen(
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             when (selectedTab) {
-                0 -> HomeScreen(user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood, onDeleteFood = onDeleteFood, onNavigateToVitals = { selectedTab = 1 }, onScanPrescription = {
+                0 -> HomeScreen(dao = dao, user = user, steps = steps, hr = hr, calories = calories, vitals = vitals, foods = foods, reports = reports, medicines = medicines, onNavigateToInsights = onNavigateToInsights, onShareWithPhysician = onShareWithPhysician, onAddFood = onAddFood, onDeleteFood = onDeleteFood, onNavigateToVitals = { selectedTab = 1 }, onScanPrescription = {
                         docScanner.getStartScanIntent(context as android.app.Activity)
                             .addOnSuccessListener { intentSender ->
                                 docScannerLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
@@ -671,7 +676,8 @@ fun DashboardScreen(
                     onScanMedicine = {
                         pharmaLensScanCameraLauncher.launch(pharmaLensScanPhotoUri)
                     },
-                    onGenericExplorer = onNavigateToGenericExplorer)
+                    onGenericExplorer = onNavigateToGenericExplorer,
+                    onNavigateToEmergencyTools = onNavigateToEmergencyTools)
                 1 -> VitalsScreen(user, onUpdateUser, vitals, onAddVitals, foods, onAddFood, onDeleteFood = onDeleteFood, onSyncRequested = {})
                 2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, onNavigateToReports, onNavigateToScanHistory)
                 3 -> ProfileScreen(
@@ -752,6 +758,50 @@ fun DashboardScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { pendingScanReportFile = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            // Prescription Processing
+            LaunchedEffect(pendingPrescriptionFile) {
+                pendingPrescriptionFile?.let { file ->
+                    isProcessingPrescription = true
+                    try {
+                        val bitmap = com.example.swasthya.GeminiHelper.fileToBitmap(file.absolutePath)
+                        if (bitmap != null) {
+                            val result = com.example.swasthya.GeminiHelper.extractPrescription(bitmap)
+                            if (result != null) {
+                                prescriptionAnalysisResult = result
+                                showPrescriptionDialog = true
+                            } else {
+                                android.widget.Toast.makeText(context, "Failed to analyze prescription.", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            android.widget.Toast.makeText(context, "Failed to read image.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    } catch(e: Exception) {
+                        Log.e("Scanner", "Error analyzing prescription", e)
+                        android.widget.Toast.makeText(context, "Error analyzing prescription.", android.widget.Toast.LENGTH_LONG).show()
+                    } finally {
+                        isProcessingPrescription = false
+                        pendingPrescriptionFile = null
+                    }
+                }
+            }
+            
+            if (showPrescriptionDialog && prescriptionAnalysisResult != null) {
+                com.example.swasthya.ui.screens.PrescriptionScanFlow(
+                    analysisResult = prescriptionAnalysisResult!!,
+                    dao = dao,
+                    onSaveToHistory = { historyEntity ->
+                        coroutineScope.launch {
+                            dao.insertPrescriptionHistory(historyEntity)
+                            android.widget.Toast.makeText(context, "Saved to Prescription History", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onDismiss = {
+                        showPrescriptionDialog = false
+                        prescriptionAnalysisResult = null
                     }
                 )
             }
@@ -907,10 +957,6 @@ fun DashboardScreen(
                     analysis = pharmaLensScanAnalysis!!,
                     dao = dao,
                     onDismiss = { showPharmaLensScanDialog = false },
-                    onFindCheaperAlternative = { comp, group ->
-                        showPharmaLensScanDialog = false
-                        onNavigateToGenericExplorer()
-                    },
                     onSaveScan = { scanEntity ->
                         coroutineScope.launch {
                             dao.insertMedicineScan(scanEntity)
@@ -922,7 +968,7 @@ fun DashboardScreen(
             }
 
             // AI Processing Overlay
-            if (isUploadingScanReport || isPharmaLensScannerLoading) {
+            if (isUploadingScanReport || isPharmaLensScannerLoading || isProcessingPrescription) {
                 AlertDialog(
                     onDismissRequest = {},
                     confirmButton = {},
@@ -991,6 +1037,7 @@ suspend fun uploadFileToCloudinary(filePath: String): String? = kotlinx.coroutin
 
 @Composable
 fun HomeScreen(
+    dao: com.example.swasthya.data.SwasthyaDao,
     user: UserEntity? = null,
     steps: String, 
     hr: String, 
@@ -1006,7 +1053,8 @@ fun HomeScreen(
     onNavigateToVitals: () -> Unit = {},
     onScanPrescription: () -> Unit = {},
     onScanMedicine: () -> Unit = {},
-    onGenericExplorer: () -> Unit = {}
+    onGenericExplorer: () -> Unit = {},
+    onNavigateToEmergencyTools: () -> Unit = {}
 ) {
     var currentView by remember { mutableStateOf("Home") }
 
@@ -1245,22 +1293,11 @@ fun HomeScreen(
             )
         }
 
-        if (showSosDialog) {
-            AlertDialog(
-                onDismissRequest = { showSosDialog = false },
-                title = { Text("Emergency Action") },
-                text = { Text("What do you want to do?") },
-                confirmButton = {
-                    Button(
-                        onClick = { showSosDialog = false; triggerCall() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                    ) { Text("Call") }
-                },
-                dismissButton = {
-                    Button(
-                        onClick = { showSosDialog = false; triggerText() },
-                    ) { Text("Text (SMS)") }
-                }
+        if (showSosDialog && user != null) {
+            com.example.swasthya.ui.screens.SosCountdownDialog(
+                user = user,
+                dao = dao,
+                onDismiss = { showSosDialog = false }
             )
         }
 
@@ -1292,21 +1329,37 @@ fun HomeScreen(
             }
 
             // Emergency Alert
-            Button(
-                onClick = { 
-                    when (user?.sosActionPreference) {
-                        "Call" -> triggerCall()
-                        "Text" -> triggerText()
-                        else -> showSosDialog = true
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(12.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth().height(64.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Warning, contentDescription = "Emergency", tint = Color.White)
-                Spacer(Modifier.width(8.dp))
-                Text("EMERGENCY", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Button(
+                    onClick = { showSosDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.Warning, contentDescription = "Emergency SOS", tint = Color.White)
+                        Spacer(Modifier.height(4.dp))
+                        Text("SOS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+                
+                Button(
+                    onClick = onNavigateToEmergencyTools,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.Build, contentDescription = "Emergency Tools", tint = MaterialTheme.colorScheme.onSecondary)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Tools", color = MaterialTheme.colorScheme.onSecondary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
             }
 
             // Today's Medicines
@@ -2858,8 +2911,16 @@ fun SosSettingsDialog(
     onDismiss: () -> Unit
 ) {
     var contactPreference by remember { mutableStateOf(user?.sosContactPreference ?: "Ask") }
-    var actionPreference by remember { mutableStateOf(user?.sosActionPreference ?: "Ask") }
     var customMsg by remember { mutableStateOf(user?.customSosMessage ?: "") }
+    var autoCall by remember { mutableStateOf(user?.autoCallAfterSos ?: false) }
+    var countdownEnabled by remember { mutableStateOf(user?.sosCountdownEnabled ?: true) }
+    var countdownSeconds by remember { mutableStateOf((user?.sosCountdownSeconds ?: 5).toString()) }
+    var rawContactsJson by remember { mutableStateOf(user?.emergencyContactsJson ?: "[]") }
+    
+    // For simplicity in this UI, we just expose basic text area for adding contacts if they choose Custom
+    // In a full production app, you'd use a dedicated list view to add/remove contacts.
+    var customContactName by remember { mutableStateOf(user?.emergencyContactName ?: "") }
+    var customContactPhone by remember { mutableStateOf(user?.emergencyContactPhone ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2873,7 +2934,7 @@ fun SosSettingsDialog(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "SOS Emergency Settings",
+                    text = "SOS Settings",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
                     color = MaterialTheme.colorScheme.error
@@ -2886,138 +2947,66 @@ fun SosSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Column {
-                    Text(
-                        text = "Who to Contact:",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Text("Emergency Contact:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))) {
                         Column(modifier = Modifier.padding(8.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { contactPreference = "Ask" }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = contactPreference == "Ask",
-                                    onClick = { contactPreference = "Ask" }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Ask Me Every Time", fontSize = 14.sp)
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { contactPreference = "112" }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = contactPreference == "112" || contactPreference == "911",
-                                    onClick = { contactPreference = "112" }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { contactPreference = "112" }) {
+                                RadioButton(selected = contactPreference == "112", onClick = { contactPreference = "112" })
                                 Text("Emergency Services (112)", fontSize = 14.sp)
                             }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { contactPreference = "Custom" }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = contactPreference == "Custom",
-                                    onClick = { contactPreference = "Custom" }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Custom Emergency Contact", fontSize = 14.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { contactPreference = "Custom" }) {
+                                RadioButton(selected = contactPreference == "Custom", onClick = { contactPreference = "Custom" })
+                                Text("Personal Emergency Contacts", fontSize = 14.sp)
                             }
                         }
                     }
-                }
-
-                Column {
-                    Text(
-                        text = "Default Action:",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { actionPreference = "Ask" }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = actionPreference == "Ask",
-                                    onClick = { actionPreference = "Ask" }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Ask Me (Show Dialog)", fontSize = 14.sp)
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { actionPreference = "Call" }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = actionPreference == "Call",
-                                    onClick = { actionPreference = "Call" }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Direct Phone Call", fontSize = 14.sp)
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { actionPreference = "Text" }
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                RadioButton(
-                                    selected = actionPreference == "Text",
-                                    onClick = { actionPreference = "Text" }
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Send SOS Text (SMS)", fontSize = 14.sp)
-                            }
-                        }
+                    if (contactPreference == "Custom") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = customContactName,
+                            onValueChange = { customContactName = it },
+                            label = { Text("Primary Contact Name") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = customContactPhone,
+                            onValueChange = { customContactPhone = it },
+                            label = { Text("Primary Contact Phone") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
 
-                Column {
-                    Text(
-                        text = "Custom SMS Message:",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                HorizontalDivider()
+                
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Enable 5-Second Countdown", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Switch(checked = countdownEnabled, onCheckedChange = { countdownEnabled = it })
+                }
+                if (countdownEnabled) {
+                    OutlinedTextField(
+                        value = countdownSeconds,
+                        onValueChange = { countdownSeconds = it },
+                        label = { Text("Countdown Duration (seconds)") },
+                        modifier = Modifier.fillMaxWidth()
                     )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Auto-Call After SMS", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Switch(checked = autoCall, onCheckedChange = { autoCall = it })
+                }
+
+                Column {
+                    Text("Custom SMS Message:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = customMsg,
                         onValueChange = { customMsg = it },
                         modifier = Modifier.fillMaxWidth().height(90.dp),
-                        placeholder = { Text("Leave blank to include medical conditions & blood group...") },
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
-                        shape = RoundedCornerShape(12.dp)
+                        placeholder = { Text("Leave blank for default") },
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
                     )
                 }
             }
@@ -3025,25 +3014,41 @@ fun SosSettingsDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    val sec = countdownSeconds.toIntOrNull() ?: 5
+                    // Convert basic inputs to JSON array for SosSystem
+                    val contactsArray = org.json.JSONArray()
+                    if (contactPreference == "Custom" && customContactPhone.isNotBlank()) {
+                        val obj = org.json.JSONObject()
+                        obj.put("name", customContactName.ifBlank { "Emergency Contact" })
+                        obj.put("phone", customContactPhone)
+                        contactsArray.put(obj)
+                    } else if (contactPreference == "112") {
+                        val obj = org.json.JSONObject()
+                        obj.put("name", "Emergency Services")
+                        obj.put("phone", "112")
+                        contactsArray.put(obj)
+                    }
+                    val jsonString = contactsArray.toString()
+                    
                     user?.let {
                         onUpdateUser(it.copy(
-                            sosContactPreference = if (contactPreference == "911") "112" else contactPreference,
-                            sosActionPreference = actionPreference,
-                            customSosMessage = customMsg
+                            sosContactPreference = contactPreference,
+                            customSosMessage = customMsg,
+                            emergencyContactName = customContactName,
+                            emergencyContactPhone = customContactPhone,
+                            emergencyContactsJson = jsonString,
+                            autoCallAfterSos = autoCall,
+                            sosCountdownEnabled = countdownEnabled,
+                            sosCountdownSeconds = sec
                         ))
                     }
                     onDismiss()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Text("Save", fontWeight = FontWeight.Bold)
-            }
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Gray)
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
         }
     )
 }

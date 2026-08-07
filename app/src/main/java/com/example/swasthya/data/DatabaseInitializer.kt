@@ -129,6 +129,34 @@ object DatabaseInitializer {
                 }
                 indianProductsList.chunked(1000).forEach { dao.insertIndianProducts(it) }
 
+                // 4. OneMg Medicines
+                onProgress(0.9f)
+                val oneMgList = mutableListOf<OneMgMedicineEntity>()
+                context.assets.open("medicine_data/one_mg_medicines.csv").use { inputStream ->
+                    val reader = BufferedReader(InputStreamReader(inputStream))
+                    var isFirstLine = true
+                    reader.forEachLine { line ->
+                        if (isFirstLine) { isFirstLine = false; return@forEachLine }
+                        val tokens = parseCsvLine(line)
+                        if (tokens.size >= 7) {
+                            try {
+                                oneMgList.add(OneMgMedicineEntity(
+                                    index = tokens[0].toIntOrNull() ?: 0,
+                                    name = tokens[1],
+                                    mrp = tokens[2],
+                                    quantity = tokens[3],
+                                    manufacturer = tokens[4],
+                                    saltComposition = tokens[5],
+                                    imageUrl = tokens[6]
+                                ))
+                            } catch (e: Exception) {
+                                Log.e("DatabaseInitializer", "Error parsing one_mg_medicines row: $line", e)
+                            }
+                        }
+                    }
+                }
+                oneMgList.chunked(1000).forEach { dao.insertOneMgMedicines(it) }
+
                 onProgress(1f)
                 prefs.edit().putBoolean(KEY_IS_INITIALIZED, true).apply()
                 Log.d("DatabaseInitializer", "Database initialization complete.")

@@ -236,6 +236,9 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                 onNavigateToScanHistory = {
                     navController.navigate("scan_history")
                 },
+                onNavigateToEmergencyTools = {
+                    navController.navigate("emergency_tools")
+                },
                 onSignOut = {
                     com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
                     navController.navigate("auth") {
@@ -289,6 +292,11 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
                     val shareIntent = android.content.Intent.createChooser(sendIntent, "Share with Physician")
                     navController.context.startActivity(shareIntent)
                 }
+            )
+        }
+        composable("emergency_tools") {
+            com.example.swasthya.ui.screens.EmergencyToolsScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable(

@@ -31,7 +31,11 @@ data class UserEntity(
     val sosContactPreference: String = "Ask",
     val sosActionPreference: String = "Ask",
     val customSosMessage: String = "",
-    val dailyCalorieLimit: Int = 2000
+    val dailyCalorieLimit: Int = 2000,
+    val emergencyContactsJson: String = "[]",
+    val autoCallAfterSos: Boolean = false,
+    val sosCountdownEnabled: Boolean = true,
+    val sosCountdownSeconds: Int = 5
 )
 
 @Entity(tableName = "vitals")
@@ -158,6 +162,26 @@ data class JanAushadhiEntity(
     val groupName: String
 )
 
+@Entity(tableName = "one_mg_medicines")
+data class OneMgMedicineEntity(
+    @PrimaryKey val index: Int,
+    val name: String,
+    val mrp: String,
+    val quantity: String,
+    val manufacturer: String,
+    val saltComposition: String,
+    val imageUrl: String
+)
+
+@Entity(tableName = "prescription_history")
+data class PrescriptionHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val extractedText: String,
+    val medicinesJson: String,
+    val analysisContext: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "medicine_scans")
 data class MedicineScanEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -171,6 +195,14 @@ data class MedicineScanEntity(
     val frequency: String,
     val duration: String,
     val source: String, // e.g., "Prescription", "Medicine Box"
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "sos_events")
+data class SosEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val contactsMessagedJson: String,
+    val locationLink: String,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -249,6 +281,12 @@ interface SwasthyaDao {
     @Query("SELECT * FROM indian_products WHERE primaryIngredient LIKE '%' || :composition || '%' AND dosageForm LIKE '%' || :dosageForm || '%' ORDER BY CAST(priceInr AS REAL) ASC LIMIT 20")
     suspend fun searchAlternatives(composition: String, dosageForm: String): List<IndianProductEntity>
 
+    @Query("SELECT * FROM one_mg_medicines WHERE name LIKE '%' || :name || '%' LIMIT 10")
+    suspend fun searchOneMgByName(name: String): List<OneMgMedicineEntity>
+
+    @Query("SELECT * FROM one_mg_medicines WHERE saltComposition LIKE '%' || :composition || '%' ORDER BY CAST(mrp AS REAL) ASC LIMIT 20")
+    suspend fun searchOneMgAlternatives(composition: String): List<OneMgMedicineEntity>
+
     @Query("SELECT * FROM jan_aushadhi_medicines WHERE genericName LIKE '%' || :composition || '%' ORDER BY CAST(mrp AS REAL) ASC LIMIT 5")
     suspend fun searchJanAushadhiAlternatives(composition: String): List<JanAushadhiEntity>
 
@@ -261,9 +299,29 @@ interface SwasthyaDao {
 
     @androidx.room.Delete
     suspend fun deleteMedicineScan(scan: MedicineScanEntity)
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertOneMgMedicines(medicines: List<OneMgMedicineEntity>)
+
+    @Query("SELECT COUNT(*) FROM one_mg_medicines")
+    suspend fun getOneMgMedicinesCount(): Int
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertPrescriptionHistory(history: PrescriptionHistoryEntity)
+
+    @Query("SELECT * FROM prescription_history ORDER BY timestamp DESC")
+    fun getAllPrescriptionHistory(): Flow<List<PrescriptionHistoryEntity>>
+
+    @androidx.room.Delete
+    suspend fun deletePrescriptionHistory(history: PrescriptionHistoryEntity)
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun insertSosEvent(event: SosEventEntity)
+
+    @Query("SELECT * FROM sos_events ORDER BY timestamp DESC")
+    fun getAllSosEvents(): Flow<List<SosEventEntity>>
 }
 
-@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class, IndianMedicineEntity::class, IndianProductEntity::class, JanAushadhiEntity::class, MedicineScanEntity::class], version = 17, exportSchema = false)
+@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class, IndianMedicineEntity::class, IndianProductEntity::class, JanAushadhiEntity::class, MedicineScanEntity::class, OneMgMedicineEntity::class, PrescriptionHistoryEntity::class, SosEventEntity::class], version = 19, exportSchema = false)
 abstract class SwasthyaDatabase : RoomDatabase() {
     abstract fun swasthyaDao(): SwasthyaDao
 
@@ -296,6 +354,23 @@ abstract class SwasthyaDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `one_mg_medicines` (`index` INTEGER NOT NULL, `name` TEXT NOT NULL, `mrp` TEXT NOT NULL, `quantity` TEXT NOT NULL, `manufacturer` TEXT NOT NULL, `saltComposition` TEXT NOT NULL, `imageUrl` TEXT NOT NULL, PRIMARY KEY(`index`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `prescription_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `extractedText` TEXT NOT NULL, `medicinesJson` TEXT NOT NULL, `analysisContext` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN emergencyContactsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE users ADD COLUMN autoCallAfterSos INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE users ADD COLUMN sosCountdownEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE users ADD COLUMN sosCountdownSeconds INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sos_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `contactsMessagedJson` TEXT NOT NULL, `locationLink` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)")
+            }
+        }
+
         fun getDatabase(context: Context): SwasthyaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -303,7 +378,7 @@ abstract class SwasthyaDatabase : RoomDatabase() {
                     SwasthyaDatabase::class.java,
                     "swasthya_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_16_17)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

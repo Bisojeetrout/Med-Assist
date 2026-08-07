@@ -3,6 +3,7 @@ package com.example.swasthya.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,6 +20,7 @@ import com.example.swasthya.MedicineAnalysis
 import com.example.swasthya.PrescribedMedicine
 import com.example.swasthya.data.*
 import kotlinx.coroutines.launch
+import com.example.swasthya.PrescriptionAnalysisResult
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,17 +28,29 @@ fun MedicineScanResultBottomSheet(
     analysis: MedicineAnalysis,
     dao: SwasthyaDao,
     onDismiss: () -> Unit,
-    onFindCheaperAlternative: (composition: String, dosageForm: String) -> Unit,
     onSaveScan: (MedicineScanEntity) -> Unit
 ) {
-    var dbMatch by remember { mutableStateOf<IndianProductEntity?>(null) }
-    var dbComposition by remember { mutableStateOf<String?>(null) }
+    var dbMatchProduct by remember { mutableStateOf<IndianProductEntity?>(null) }
+    var dbMatchOneMg by remember { mutableStateOf<OneMgMedicineEntity?>(null) }
+    var alternativesJan by remember { mutableStateOf<List<JanAushadhiEntity>>(emptyList()) }
+    var alternativesBranded by remember { mutableStateOf<List<IndianProductEntity>>(emptyList()) }
     var isSearching by remember { mutableStateOf(true) }
 
     LaunchedEffect(analysis) {
-        val matches = dao.searchProductsByName(analysis.name.take(6))
-        dbMatch = matches.firstOrNull()
-        dbComposition = dbMatch?.primaryIngredient ?: analysis.name
+        val matchesProduct = dao.searchProductsByName(analysis.name.take(6))
+        val matchesOneMg = dao.searchOneMgByName(analysis.name.take(6))
+        
+        dbMatchProduct = matchesProduct.firstOrNull()
+        dbMatchOneMg = matchesOneMg.firstOrNull()
+        
+        val comp = dbMatchProduct?.primaryIngredient ?: dbMatchOneMg?.saltComposition ?: analysis.genericName
+        val form = dbMatchProduct?.dosageForm ?: analysis.dosageForm
+        
+        if (comp.isNotBlank() && comp != "Unknown") {
+            val shortComp = comp.split(" ", "+", ",").firstOrNull { it.length > 3 } ?: comp
+            alternativesJan = dao.searchJanAushadhiAlternatives("%$shortComp%").take(1)
+            alternativesBranded = dao.searchAlternatives("%$shortComp%", "%$form%").filter { it.brandName != analysis.name }.take(2)
+        }
         isSearching = false
     }
 
@@ -44,72 +58,112 @@ fun MedicineScanResultBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Info, contentDescription = "Medicine", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Medicine Analysis", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = "Medicine", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Medicine Analysis", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
             }
 
             if (isSearching) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                item { CircularProgressIndicator(modifier = Modifier.padding(16.dp)) }
             } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(analysis.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("Strength: ${analysis.strength}", fontSize = 14.sp)
-                        Text("Form: ${analysis.dosageForm}", fontSize = 14.sp)
-                        Text("Manufacturer: ${dbMatch?.manufacturer ?: analysis.manufacturer}", fontSize = 14.sp)
-                        
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        
-                        if (dbMatch != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = "Matched", tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Exact Match Found in Database", color = Color(0xFF2E7D32), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                item {
+                    val hasDbMatch = dbMatchProduct != null || dbMatchOneMg != null
+                    
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (hasDbMatch) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Matched", tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Database matched • AI explained", color = Color(0xFF2E7D32), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Warning, contentDescription = "AI Generated", tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("AI-generated information • Database match not found", color = Color(0xFFE65100), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                            Text("Composition: ${dbMatch?.activeIngredients ?: "Unknown"}", fontSize = 14.sp)
-                            Text("Pack Size: ${dbMatch?.packSize} ${dbMatch?.packUnit}", fontSize = 14.sp)
-                            Text("Price: ₹${dbMatch?.priceInr}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 16.sp)
-                        } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Warning, contentDescription = "Not Found", tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Not found in local database", color = Color(0xFFE65100), fontSize = 12.sp)
+                            
+                            val name = dbMatchProduct?.brandName ?: dbMatchOneMg?.name ?: analysis.name
+                            val comp = dbMatchProduct?.activeIngredients ?: dbMatchOneMg?.saltComposition ?: analysis.genericName
+                            val strength = dbMatchProduct?.primaryStrength ?: analysis.strength
+                            val form = dbMatchProduct?.dosageForm ?: analysis.dosageForm
+                            val manufacturer = dbMatchProduct?.manufacturer ?: dbMatchOneMg?.manufacturer ?: analysis.manufacturer
+                            val price = dbMatchProduct?.priceInr ?: dbMatchOneMg?.mrp
+                            
+                            Text(name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("Generic/Salt: $comp", fontSize = 14.sp)
+                            Text("Strength: $strength", fontSize = 14.sp)
+                            Text("Form: $form", fontSize = 14.sp)
+                            Text("Manufacturer: $manufacturer", fontSize = 14.sp)
+                            
+                            if (price != null) {
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                Text("Price: ₹$price", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 16.sp)
                             }
                         }
                     }
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            onFindCheaperAlternative(dbComposition ?: analysis.name, analysis.dosageForm)
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Find Alternatives")
+                if (alternativesJan.isNotEmpty() || alternativesBranded.isNotEmpty()) {
+                    item {
+                        Text("Affordable Alternatives", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+                        Text("Do not switch prescribed medicines without confirming with your doctor/pharmacist.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     }
+                    
+                    items(alternativesJan) { alt ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("PMBJP Generic (Jan Aushadhi)", color = Color(0xFF2E7D32), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(alt.genericName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("Price: ₹${alt.mrp} (${alt.unitSize})", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    
+                    items(alternativesBranded) { alt ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("Branded Alternative", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(alt.brandName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("${alt.manufacturer}", fontSize = 12.sp)
+                                Text("Price: ₹${alt.priceInr} (${alt.packSize} ${alt.packUnit})", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
                             onSaveScan(
                                 MedicineScanEntity(
-                                    medicineName = analysis.name,
-                                    composition = dbMatch?.primaryIngredient ?: "",
-                                    strength = analysis.strength,
-                                    dosageForm = analysis.dosageForm,
-                                    manufacturer = dbMatch?.manufacturer ?: analysis.manufacturer,
-                                    price = dbMatch?.priceInr ?: "N/A",
+                                    medicineName = dbMatchProduct?.brandName ?: dbMatchOneMg?.name ?: analysis.name,
+                                    composition = dbMatchProduct?.activeIngredients ?: dbMatchOneMg?.saltComposition ?: analysis.genericName,
+                                    strength = dbMatchProduct?.primaryStrength ?: analysis.strength,
+                                    dosageForm = dbMatchProduct?.dosageForm ?: analysis.dosageForm,
+                                    manufacturer = dbMatchProduct?.manufacturer ?: dbMatchOneMg?.manufacturer ?: analysis.manufacturer,
+                                    price = dbMatchProduct?.priceInr ?: dbMatchOneMg?.mrp ?: "N/A",
                                     dosage = "",
                                     frequency = "",
                                     duration = "",
@@ -118,26 +172,26 @@ fun MedicineScanResultBottomSheet(
                             )
                             onDismiss()
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Save to History")
                     }
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PrescriptionConfirmationDialog(
-    extractedMedicines: List<PrescribedMedicine>,
-    onSaveToSchedule: (List<MedicineEntity>) -> Unit,
-    onSaveToHistory: (List<MedicineScanEntity>) -> Unit,
+fun PrescriptionScanFlow(
+    analysisResult: PrescriptionAnalysisResult,
+    dao: SwasthyaDao,
+    onSaveToHistory: (PrescriptionHistoryEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var editableMedicines by remember { mutableStateOf(extractedMedicines.map { it.copy() }) }
+    var isSaving by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -145,51 +199,72 @@ fun PrescriptionConfirmationDialog(
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Edit, contentDescription = "Prescription", tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Confirm Prescription")
+                Text("Prescription Summary")
             }
         },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(editableMedicines.size) { index ->
-                    val med = editableMedicines[index]
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("General Context", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(analysisResult.context, fontSize = 14.sp)
+                            Text("Note: This does not confirm a diagnosis.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
+                
+                items(analysisResult.medicines.size) { index ->
+                    val med = analysisResult.medicines[index]
+                    var isExpanded by remember { mutableStateOf(false) }
+                    
+                    var dbMatchProduct by remember { mutableStateOf<IndianProductEntity?>(null) }
+                    var dbMatchOneMg by remember { mutableStateOf<OneMgMedicineEntity?>(null) }
+                    
+                    LaunchedEffect(med) {
+                        val nameSearch = med.medicineName.take(6)
+                        if (nameSearch.isNotBlank()) {
+                            dbMatchProduct = dao.searchProductsByName(nameSearch).firstOrNull()
+                            dbMatchOneMg = dao.searchOneMgByName(nameSearch).firstOrNull()
+                        }
+                    }
+                    
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { isExpanded = !isExpanded }
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = med.medicineName,
-                                onValueChange = { newName ->
-                                    val newList = editableMedicines.toMutableList()
-                                    newList[index] = med.copy(medicineName = newName)
-                                    editableMedicines = newList
-                                },
-                                label = { Text("Medicine Name") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = med.strength,
-                                    onValueChange = { newVal ->
-                                        val newList = editableMedicines.toMutableList()
-                                        newList[index] = med.copy(strength = newVal)
-                                        editableMedicines = newList
-                                    },
-                                    label = { Text("Strength") },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                OutlinedTextField(
-                                    value = med.frequency,
-                                    onValueChange = { newVal ->
-                                        val newList = editableMedicines.toMutableList()
-                                        newList[index] = med.copy(frequency = newVal)
-                                        editableMedicines = newList
-                                    },
-                                    label = { Text("Frequency") },
-                                    modifier = Modifier.weight(1f)
-                                )
+                            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(med.medicineName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Icon(if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = "Expand")
+                            }
+                            
+                            val name = dbMatchProduct?.brandName ?: dbMatchOneMg?.name ?: med.medicineName
+                            val strength = dbMatchProduct?.primaryStrength ?: med.strength
+                            val form = dbMatchProduct?.dosageForm ?: med.dosageForm
+                            
+                            Text("Strength: $strength | Form: $form", fontSize = 14.sp)
+                            Text("Directions: ${med.dose} - ${med.frequency} (${med.duration})", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                            
+                            if (isExpanded) {
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                if (dbMatchProduct != null || dbMatchOneMg != null) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = "Matched", tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Database matched", color = Color(0xFF2E7D32), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                if (med.instructions.isNotBlank()) {
+                                    Text("Instructions: ${med.instructions}", fontSize = 14.sp)
+                                }
                             }
                         }
                     }
@@ -198,45 +273,22 @@ fun PrescriptionConfirmationDialog(
         },
         confirmButton = {
             Button(onClick = {
-                // Map to MedicineEntity for schedule
-                val scheduleEntities = editableMedicines.map {
-                    MedicineEntity(
-                        name = it.medicineName,
-                        dosage = "${it.dose} ${it.dosageForm}",
-                        schedule = it.frequency,
-                        explanation = it.instructions,
-                        timeInMillis = System.currentTimeMillis() + 3600000, // Dummy schedule
-                        timeLabel = "08:00 AM",
-                        reminderType = "Daily"
-                    )
-                }
-                
-                // Map to ScanEntity for history
-                val historyEntities = editableMedicines.map {
-                    MedicineScanEntity(
-                        medicineName = it.medicineName,
-                        composition = "",
-                        strength = it.strength,
-                        dosageForm = it.dosageForm,
-                        manufacturer = "",
-                        price = "",
-                        dosage = it.dose,
-                        frequency = it.frequency,
-                        duration = it.duration,
-                        source = "Prescription"
-                    )
-                }
-                
-                onSaveToSchedule(scheduleEntities)
-                onSaveToHistory(historyEntities)
+                if (isSaving) return@Button
+                isSaving = true
+                val historyEntity = PrescriptionHistoryEntity(
+                    extractedText = "Prescription Scanned",
+                    medicinesJson = analysisResult.medicines.joinToString("; ") { "${it.medicineName} (${it.dose}, ${it.frequency})" },
+                    analysisContext = analysisResult.context
+                )
+                onSaveToHistory(historyEntity)
                 onDismiss()
             }) {
-                Text("Save All")
+                Text(if (isSaving) "Saving..." else "Save Prescription")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Close")
             }
         }
     )
