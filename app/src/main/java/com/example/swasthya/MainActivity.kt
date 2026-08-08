@@ -296,6 +296,12 @@ fun SwasthyaApp(dao: com.example.swasthya.data.SwasthyaDao, startWithFoodLog: Bo
         }
         composable("emergency_tools") {
             com.example.swasthya.ui.screens.EmergencyToolsScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToFindBlood = { navController.navigate("find_blood") }
+            )
+        }
+        composable("find_blood") {
+            com.example.swasthya.ui.screens.BloodStockScreen(
                 onBack = { navController.popBackStack() }
             )
         }

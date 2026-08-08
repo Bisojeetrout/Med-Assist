@@ -41,7 +41,10 @@ import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EmergencyToolsScreen(onBack: () -> Unit) {
+fun EmergencyToolsScreen(
+    onBack: () -> Unit,
+    onNavigateToFindBlood: () -> Unit = {}
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -75,7 +78,13 @@ fun EmergencyToolsScreen(onBack: () -> Unit) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(140.dp)
-                        .clickable { /* Future implementation */ },
+                        .clickable { 
+                            if (tool.name == "Find Blood") {
+                                onNavigateToFindBlood()
+                            } else {
+                                /* Future implementation */
+                            }
+                        },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(16.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
