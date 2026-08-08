@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import uvicorn
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +18,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
 @app.get("/api/blood-stock")
 def get_blood_stock():
@@ -34,7 +39,11 @@ def get_blood_stock():
         if not table:
             return {"status": "error", "message": "Table not found. Source format may have changed."}
         
-        rows = table.find('tbody').find_all('tr')
+        tbody = table.find('tbody')
+        if not tbody:
+            return {"status": "error", "message": "Table body not found. Source format may have changed."}
+            
+        rows = tbody.find_all('tr')
         data = []
         for row in rows:
             cols = row.find_all('td')
@@ -60,4 +69,5 @@ def get_blood_stock():
         return {"status": "error", "message": "An unexpected error occurred during parsing"}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

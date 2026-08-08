@@ -4,8 +4,8 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
-    // For local emulator, use 10.0.2.2. For physical device on same wifi, use computer's IP
-    private const val BASE_URL = "http://10.0.2.2:8000/"
+    // Pointing to production Render backend
+    private const val BASE_URL = "https://swasthya-blood-api.onrender.com/"
 
     val instance: BloodApiService by lazy {
         Retrofit.Builder()
