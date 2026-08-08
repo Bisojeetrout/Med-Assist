@@ -27,6 +27,7 @@ import com.example.swasthya.PrescriptionAnalysisResult
 fun MedicineScanResultBottomSheet(
     analysis: MedicineAnalysis,
     dao: SwasthyaDao,
+    localUri: String = "",
     onDismiss: () -> Unit,
     onSaveScan: (MedicineScanEntity) -> Unit
 ) {
@@ -167,7 +168,8 @@ fun MedicineScanResultBottomSheet(
                                     dosage = "",
                                     frequency = "",
                                     duration = "",
-                                    source = "Medicine Box"
+                                    source = "Medicine Box",
+                                    localUri = localUri
                                 )
                             )
                             onDismiss()
@@ -188,6 +190,7 @@ fun MedicineScanResultBottomSheet(
 fun PrescriptionScanFlow(
     analysisResult: PrescriptionAnalysisResult,
     dao: SwasthyaDao,
+    localUri: String = "",
     onSaveToHistory: (PrescriptionHistoryEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -278,7 +281,8 @@ fun PrescriptionScanFlow(
                 val historyEntity = PrescriptionHistoryEntity(
                     extractedText = "Prescription Scanned",
                     medicinesJson = analysisResult.medicines.joinToString("; ") { "${it.medicineName} (${it.dose}, ${it.frequency})" },
-                    analysisContext = analysisResult.context
+                    analysisContext = analysisResult.context,
+                    localUri = localUri
                 )
                 onSaveToHistory(historyEntity)
                 onDismiss()

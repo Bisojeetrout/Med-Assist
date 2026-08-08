@@ -179,6 +179,7 @@ data class PrescriptionHistoryEntity(
     val extractedText: String,
     val medicinesJson: String,
     val analysisContext: String,
+    val localUri: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -195,6 +196,7 @@ data class MedicineScanEntity(
     val frequency: String,
     val duration: String,
     val source: String, // e.g., "Prescription", "Medicine Box"
+    val localUri: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -321,7 +323,7 @@ interface SwasthyaDao {
     fun getAllSosEvents(): Flow<List<SosEventEntity>>
 }
 
-@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class, IndianMedicineEntity::class, IndianProductEntity::class, JanAushadhiEntity::class, MedicineScanEntity::class, OneMgMedicineEntity::class, PrescriptionHistoryEntity::class, SosEventEntity::class], version = 19, exportSchema = false)
+@Database(entities = [UserEntity::class, VitalsEntity::class, MedicineEntity::class, ReportEntity::class, FoodEntity::class, PhysicianEntity::class, IndianMedicineEntity::class, IndianProductEntity::class, JanAushadhiEntity::class, MedicineScanEntity::class, OneMgMedicineEntity::class, PrescriptionHistoryEntity::class, SosEventEntity::class], version = 20, exportSchema = false)
 abstract class SwasthyaDatabase : RoomDatabase() {
     abstract fun swasthyaDao(): SwasthyaDao
 
@@ -371,6 +373,13 @@ abstract class SwasthyaDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE prescription_history ADD COLUMN localUri TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE medicine_scans ADD COLUMN localUri TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): SwasthyaDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -378,7 +387,7 @@ abstract class SwasthyaDatabase : RoomDatabase() {
                     SwasthyaDatabase::class.java,
                     "swasthya_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

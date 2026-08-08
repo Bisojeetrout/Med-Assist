@@ -182,6 +182,9 @@ fun DashboardScreen(
 ) {
     var selectedTab by remember { mutableStateOf(if (startWithFoodLog) 2 else 0) }
     
+    val prescriptions by dao.getAllPrescriptionHistory().collectAsState(initial = emptyList())
+    val medicineScans by dao.getAllMedicineScans().collectAsState(initial = emptyList())
+
     // Health Connect States
     var steps by remember { mutableStateOf("0") }
     var hr by remember { mutableStateOf("0") }
@@ -501,8 +504,8 @@ fun DashboardScreen(
                     onClick = { selectedTab = 0 }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Add, contentDescription = "Vitals") },
-                    label = { Text("Vitals") },
+                    icon = { Icon(Icons.Default.Notifications, contentDescription = "Medicines") },
+                    label = { Text("Medicines") },
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 }
                 )
@@ -678,8 +681,34 @@ fun DashboardScreen(
                     },
                     onGenericExplorer = onNavigateToGenericExplorer,
                     onNavigateToEmergencyTools = onNavigateToEmergencyTools)
-                1 -> VitalsScreen(user, onUpdateUser, vitals, onAddVitals, foods, onAddFood, onDeleteFood = onDeleteFood, onSyncRequested = {})
-                2 -> RecordsScreen(medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, reports, onAddReport, onNavigateToReports, onNavigateToScanHistory)
+                1 -> MedicinesScreen(
+                    medicines = medicines,
+                    onAddMedicine = onAddMedicine,
+                    onUpdateMedicine = onUpdateMedicine,
+                    onDeleteMedicine = onDeleteMedicine,
+                    onNavigateToScanHistory = onNavigateToScanHistory,
+                    onNavigateToGenericExplorer = onNavigateToGenericExplorer,
+                    onScanPrescription = {
+                        docScanner.getStartScanIntent(context as android.app.Activity)
+                            .addOnSuccessListener { intentSender ->
+                                docScannerLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
+                            }
+                            .addOnFailureListener { e -> android.util.Log.e("Scanner", "Error starting scanner", e) }
+                    },
+                    onScanMedicine = {
+                        pharmaLensScanCameraLauncher.launch(pharmaLensScanPhotoUri)
+                    }
+                )
+                2 -> RecordsScreen(
+                    reports = reports,
+                    prescriptions = prescriptions,
+                    medicineScans = medicineScans,
+                    onAddReport = onAddReport,
+                    onDeleteReport = { coroutineScope.launch { dao.deleteReport(it) } },
+                    onDeletePrescription = { coroutineScope.launch { dao.deletePrescriptionHistory(it) } },
+                    onDeleteMedicineScan = { coroutineScope.launch { dao.deleteMedicineScan(it) } },
+                    onShareWithPhysician = onShareWithPhysician
+                )
                 3 -> ProfileScreen(
                     user = user,
                     onUpdateUser = onUpdateUser,
@@ -762,6 +791,7 @@ fun DashboardScreen(
                 )
             }
 
+            var currentPrescriptionUri by remember { mutableStateOf("") }
             // Prescription Processing
             LaunchedEffect(pendingPrescriptionFile) {
                 pendingPrescriptionFile?.let { file ->
@@ -771,6 +801,7 @@ fun DashboardScreen(
                         if (bitmap != null) {
                             val result = com.example.swasthya.GeminiHelper.extractPrescription(bitmap)
                             if (result != null) {
+                                currentPrescriptionUri = file.absolutePath
                                 prescriptionAnalysisResult = result
                                 showPrescriptionDialog = true
                             } else {
@@ -793,6 +824,7 @@ fun DashboardScreen(
                 com.example.swasthya.ui.screens.PrescriptionScanFlow(
                     analysisResult = prescriptionAnalysisResult!!,
                     dao = dao,
+                    localUri = currentPrescriptionUri,
                     onSaveToHistory = { historyEntity ->
                         coroutineScope.launch {
                             dao.insertPrescriptionHistory(historyEntity)
@@ -956,6 +988,7 @@ fun DashboardScreen(
                 com.example.swasthya.ui.screens.MedicineScanResultBottomSheet(
                     analysis = pharmaLensScanAnalysis!!,
                     dao = dao,
+                    localUri = pharmaLensScanPhotoUri.toString(),
                     onDismiss = { showPharmaLensScanDialog = false },
                     onSaveScan = { scanEntity ->
                         coroutineScope.launch {
@@ -2268,132 +2301,166 @@ fun CalorieTrackerSection(
 
 @Composable
 fun RecordsScreen(
-    medicines: List<MedicineEntity>, 
-    onAddMedicine: (MedicineEntity) -> Unit,
-    onUpdateMedicine: (MedicineEntity) -> Unit = {},
-    onDeleteMedicine: (MedicineEntity) -> Unit = {},
-    reports: List<ReportEntity> = emptyList(),
-    onAddReport: (ReportEntity) -> Unit = {},
-    onNavigateToReports: () -> Unit = {},
-    onNavigateToScanHistory: () -> Unit = {}
+    reports: List<ReportEntity>,
+    prescriptions: List<com.example.swasthya.data.PrescriptionHistoryEntity>,
+    medicineScans: List<com.example.swasthya.data.MedicineScanEntity>,
+    onAddReport: (ReportEntity) -> Unit,
+    onDeleteReport: (ReportEntity) -> Unit,
+    onDeletePrescription: (com.example.swasthya.data.PrescriptionHistoryEntity) -> Unit,
+    onDeleteMedicineScan: (com.example.swasthya.data.MedicineScanEntity) -> Unit,
+    onShareWithPhysician: () -> Unit
 ) {
-    var currentView by remember { mutableStateOf("Menu") }
+    var selectedSection by remember { mutableStateOf("Reports") }
+    var reportToExplain by remember { mutableStateOf<ReportEntity?>(null) }
+    val context = LocalContext.current
 
-    if (currentView == "Medications") {
-        MedicationsScreen(
-            medicines = medicines,
-            onAddMedicine = onAddMedicine,
-            onUpdateMedicine = onUpdateMedicine,
-            onDeleteMedicine = onDeleteMedicine,
-            onNavigateBack = { currentView = "Menu" }
-        )
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text("Records", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Text("Your health documentation in one place", fontSize = 16.sp, color = Color.Gray)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Tabs
+        ScrollableTabRow(
+            selectedTabIndex = when (selectedSection) {
+                "Reports" -> 0
+                "Prescriptions" -> 1
+                "Scan History" -> 2
+                else -> 0
+            },
+            edgePadding = 0.dp,
+            containerColor = Color.Transparent
         ) {
-            Text("Records", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Text("Your health data in one place", fontSize = 16.sp, color = Color.Gray)
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Medical Reports Card
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { onNavigateToReports() },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.List, contentDescription = "Reports", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Medical Reports", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("View lab reports, prescriptions and documents", fontSize = 12.sp, color = Color.Gray)
-                    }
-                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Scan History Card
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { onNavigateToScanHistory() },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Search, contentDescription = "Scan History", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Medicine Scan History", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("View previously scanned medicines and prescriptions", fontSize = 12.sp, color = Color.Gray)
-                    }
-                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            // Medications Card
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { currentView = "Medications" },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Notifications, contentDescription = "Medications", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Medications & Reminders", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("Manage your medicines and meal reminders", fontSize = 12.sp, color = Color.Gray)
-                    }
-                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
-                }
-            }
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Recent Reports", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                TextButton(onClick = onNavigateToReports) {
-                    Text("See all")
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            val recentReports = reports.take(3)
-            recentReports.forEach { report ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.List, contentDescription = "Report")
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(report.fileName, fontWeight = FontWeight.Bold)
-                            Text("Uploaded: ${report.uploadDate}", fontSize = 12.sp)
+            Tab(selected = selectedSection == "Reports", onClick = { selectedSection = "Reports" }, text = { Text("Reports") })
+            Tab(selected = selectedSection == "Prescriptions", onClick = { selectedSection = "Prescriptions" }, text = { Text("Prescriptions") })
+            Tab(selected = selectedSection == "Scan History", onClick = { selectedSection = "Scan History" }, text = { Text("Scan History") })
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            when (selectedSection) {
+                "Reports" -> {
+                    items(reports) { report ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(report.fileName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Text("Uploaded: ${report.uploadDate}", fontSize = 12.sp, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = {
+                                        android.widget.Toast.makeText(context, "Opening ${report.fileName}", android.widget.Toast.LENGTH_SHORT).show()
+                                    }, modifier = Modifier.weight(1f)) {
+                                        Text("Open")
+                                    }
+                                    if (report.reportSummary != null) {
+                                        Button(onClick = { reportToExplain = report }, modifier = Modifier.weight(1f)) {
+                                            Text("AI Explain")
+                                        }
+                                    }
+                                    IconButton(onClick = { onDeleteReport(report) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
                         }
                     }
+                    if (reports.isEmpty()) {
+                        item { Text("No reports uploaded.", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
+                    }
                 }
-            }
-            if (recentReports.isEmpty()) {
-                Text("No recent reports.", color = Color.Gray)
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Stay Safe Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)) // Light orange background
-            ) {
-                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = "Safe", tint = Color(0xFFEF6C00), modifier = Modifier.size(40.dp))
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text("Stay Safe", fontWeight = FontWeight.Bold, color = Color(0xFFEF6C00))
-                        Text("Always keep your health records updated and share with your physician when needed.", fontSize = 12.sp, color = Color.DarkGray)
+                "Prescriptions" -> {
+                    items(prescriptions) { rx ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Prescription", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Text(java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US).format(java.util.Date(rx.timestamp)), fontSize = 12.sp, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Medicines: ${rx.medicinesJson}", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (rx.localUri.isNotBlank()) {
+                                        Button(onClick = {
+                                            android.widget.Toast.makeText(context, "Opening original image...", android.widget.Toast.LENGTH_SHORT).show()
+                                        }, modifier = Modifier.weight(1f)) {
+                                            Text("View Original")
+                                        }
+                                    }
+                                    IconButton(onClick = { onDeletePrescription(rx) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (prescriptions.isEmpty()) {
+                        item { Text("No prescriptions saved.", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
+                    }
+                }
+                "Scan History" -> {
+                    items(medicineScans) { scan ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(scan.medicineName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Text(java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US).format(java.util.Date(scan.timestamp)), fontSize = 12.sp, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Composition: ${scan.composition}", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (scan.localUri.isNotBlank()) {
+                                        Button(onClick = {
+                                            android.widget.Toast.makeText(context, "Opening scanned image...", android.widget.Toast.LENGTH_SHORT).show()
+                                        }, modifier = Modifier.weight(1f)) {
+                                            Text("View Image")
+                                        }
+                                    }
+                                    IconButton(onClick = { onDeleteMedicineScan(scan) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (medicineScans.isEmpty()) {
+                        item { Text("No medicine scans found.", color = Color.Gray, modifier = Modifier.padding(16.dp)) }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(24.dp))
         }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { onShareWithPhysician() }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Share, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Share with Physician")
+        }
+        Text("To upload reports, use the + button on the main dashboard.", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
+    }
+
+    if (reportToExplain != null) {
+        AlertDialog(
+            onDismissRequest = { reportToExplain = null },
+            title = { Text("AI Summary") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(reportToExplain!!.reportSummary ?: "No summary available.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { reportToExplain = null }) { Text("Close") }
+            }
+        )
     }
 }
 
@@ -3797,3 +3864,141 @@ fun PharmaLensResultDialog(
 
 
 
+@Composable
+fun MedicinesScreen(
+    medicines: List<com.example.swasthya.data.MedicineEntity>,
+    onAddMedicine: (com.example.swasthya.data.MedicineEntity) -> Unit,
+    onUpdateMedicine: (com.example.swasthya.data.MedicineEntity) -> Unit,
+    onDeleteMedicine: (com.example.swasthya.data.MedicineEntity) -> Unit,
+    onNavigateToScanHistory: () -> Unit,
+    onNavigateToGenericExplorer: () -> Unit,
+    onScanPrescription: () -> Unit,
+    onScanMedicine: () -> Unit
+) {
+    var currentView by remember { mutableStateOf("Menu") }
+
+    if (currentView == "Medications") {
+        MedicationsScreen(
+            medicines = medicines,
+            onAddMedicine = onAddMedicine,
+            onUpdateMedicine = onUpdateMedicine,
+            onDeleteMedicine = onDeleteMedicine,
+            onNavigateBack = { currentView = "Menu" }
+        )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            Text("Medicines", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("Manage your medications and prescriptions", fontSize = 16.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // My Medicines / Today's Schedule / Reminders
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { currentView = "Medications" },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Notifications, contentDescription = "Medications", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("My Medicines & Reminders", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Today's schedule and reminders", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Scan Medicine (Pharma Lens)
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onScanMedicine() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Search, contentDescription = "Scan Medicine", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Scan Medicine", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("AI analysis of medicine strips", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Scan Prescription
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onScanPrescription() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Edit, contentDescription = "Scan Prescription", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Scan Prescription", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Digitize your prescriptions", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Generic/cheaper alternatives
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToGenericExplorer() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ShoppingCart, contentDescription = "Generic Explorer", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Generic Alternatives", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Find cheaper Jan Aushadhi alternatives", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Drug Interaction Shield (Placeholder)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { 
+                    android.widget.Toast.makeText(context, "Drug Interaction Shield coming soon!", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = "Interaction Shield", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Drug Interaction Shield", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Check for dangerous interactions", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Medicine History
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToScanHistory() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.List, contentDescription = "Medicine History", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Medicine History", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("View previously scanned medicines", fontSize = 12.sp, color = Color.Gray)
+                    }
+                    Icon(androidx.compose.material.icons.Icons.Default.KeyboardArrowRight, contentDescription = null)
+                }
+            }
+        }
+    }
+}
